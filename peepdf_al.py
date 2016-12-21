@@ -82,8 +82,8 @@ class PeePDF(ServiceBase):
     # noinspection PyUnresolvedReferences
     def import_service_deps(self):
         global analyseJS, isPostscript, PDFParser, vulnsDict, unescape
-        from assemblyline.al.service.peepdf_al.peepdf.JSAnalysis import analyseJS, isPostscript, unescape
-        from assemblyline.al.service.peepdf_al.peepdf.PDFCore import PDFParser, vulnsDict
+        from al_services.alsvc_peepdf_al.peepdf.JSAnalysis import analyseJS, isPostscript, unescape
+        from al_services.alsvc_peepdf_al.peepdf.PDFCore import PDFParser, vulnsDict
 
     # noinspection PyUnusedLocal,PyMethodMayBeStatic
     def _report_embedded_xdp(self, file_res, chunk_number, binary, leftover):
