@@ -31,7 +31,7 @@ The PeePDF service will report the following information for each file when pres
     - Encoded
     - Objects with JS code
 
-#####Heuristics
+####Heuristics
 
 **AL_PeePDF_001**: Embedded PDF in XDP.
 
@@ -47,7 +47,7 @@ The PeePDF service will report the following information for each file when pres
 
 **AL_PeePDF_007**: Suspicious Javascript.
 
-#### Other Items of Interest
+####Other Items of Interest
 
 - CVE identifiers
 - Embedded files (will attempt to extract)
