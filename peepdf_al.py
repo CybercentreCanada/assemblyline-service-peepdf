@@ -71,13 +71,18 @@ class PeePDF(ServiceBase):
     SERVICE_DESCRIPTION = "This service uses the Python PeePDF library information from PDFs including javascript " \
                           "blocks which it will attempt to deobfuscate, if necessary, for further analysis."
     SERVICE_ENABLED = True
-    SERVICE_REVISION = ServiceBase.parse_revision('$Id: 640cf864cd1bb135f620a0e103b82342824b99fa $')
+    SERVICE_REVISION = ServiceBase.parse_revision('$Id$')
     SERVICE_VERSION = '1'
     SERVICE_CPU_CORES = 0.5
     SERVICE_RAM_MB = 512
 
+    SERVICE_DEFAULT_CONFIG = {
+        'max_pdf_size': 3000000
+    }
+
     def __init__(self, cfg=None):
         super(PeePDF, self).__init__(cfg)
+        self.max_pdf_size = cfg.get('max_pdf_size', 3000000)
 
     # noinspection PyUnresolvedReferences
     def import_service_deps(self):
@@ -130,21 +135,24 @@ class PeePDF(ServiceBase):
     def execute(self, request):
         request.result = Result()
         temp_filename = request.download()
+
+        # Filter out large documents
+        if os.path.getsize(temp_filename) > self.max_pdf_size:
+            request.result.add_section(ResultSection(SCORE['NULL'], "PDF Analysis of the file was skipped because the "
+                                                                    "file is too big (limit is %i MB)." % (
+                                                                    self.max_pdf_size / 1000 / 1000)))
+            return
+
         filename = os.path.basename(temp_filename)
         # noinspection PyUnusedLocal
         file_content = ''
         with open(temp_filename, 'r') as f:
             file_content = f.read()
-        file_res = request.result
 
         if '<xdp:xdp' in file_content:
-            file_res = self.find_xdp_embedded(filename, file_content, request)
+            self.find_xdp_embedded(filename, file_content, request)
 
-        if len(file_content) < 3000000:
-            self.peepdf_analysis(temp_filename, file_content, request)
-        else:
-            file_res.add_section(ResultSection(SCORE['NULL'], "PDF Analysis of the file was skipped because the "
-                                                              "file is too big (limit is 3 MB)."))
+        self.peepdf_analysis(temp_filename, file_content, request)
 
     # noinspection PyBroadException
     @staticmethod
