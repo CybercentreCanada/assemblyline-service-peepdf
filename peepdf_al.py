@@ -89,6 +89,7 @@ class PeePDF(ServiceBase):
             with open(temp_filename, 'r') as f:
                 file_content = f.read()
 
+            embedded_pdf = False
             if '<xdp:xdp' in file_content:
                 embedded_pdf = self.find_pdf_in_xdp(filename, file_content, request)
 
@@ -103,8 +104,21 @@ class PeePDF(ServiceBase):
                     return
 
                 request.result.add_section(self.get_pdf_info(stats_dict))
-                request.result.add_section(self.get_pdf_version_info(stats_dict))
 
+                for _version in self.get_pdf_version_info(stats_dict, request.result):
+                    request.result.add_section(_version)
+                    for obj in stats_dict['Version'][_version]['Objects'][1]:
+                        cur_obj = pdf_file.getObject(obj, _version)
+                        if cur_obj.containsJScode:
+                            self.inspect_js(cur_obj)
+                        elif cur_obj.type == "stream":
+                            self.inspect_stream(cur_obj)
+                        else:
+                            pass
+
+            else:
+                res = ResultSection(SCORE['INFO'], "ERROR: Could not parse file with peepdf.")
+                file_res.add_section(res)
 
             buffers = self.find_large_buffers(file_content)
             found_eval = self.find_eval(file_content)
@@ -135,6 +149,202 @@ class PeePDF(ServiceBase):
 
             gc.collect()
 
+    def inspect_stream(self, cur_obj):
+        if cur_obj.isEncodedStream and cur_obj.filter is not None:
+            data = cur_obj.decodedStream
+            encoding = cur_obj.filter.value.replace("[", "").replace("]", "").replace("/",
+                                                                                      "").strip()
+            val = cur_obj.rawValue
+            otype = cur_obj.elements.get("/Type", None)
+            sub_type = cur_obj.elements.get("/Subtype", None)
+            length = cur_obj.elements.get("/Length", None)
+
+        else:
+            data = cur_obj.rawStream
+            encoding = None
+            val = cur_obj.rawValue
+            otype = cur_obj.elements.get("/Type", None)
+            sub_type = cur_obj.elements.get("/Subtype", None)
+            length = cur_obj.elements.get("/Length", None)
+
+        if otype:
+            otype = otype.value.replace("/", "").lower()
+        if sub_type:
+            sub_type = sub_type.value.replace("/", "").lower()
+        if length:
+            length = length.value
+
+        if otype == "embeddedfile":
+            if len(data) > 4096:
+                # TODO: we might have to be smarter here.
+                cur_res = ResultSection(SCORE['NULL'], 'Embedded file found (%s bytes) [obj: %s %s]'
+                                                       ' and dumped for analysis %s%s%s' %
+                                        (length, obj, version, {True: "(Type: %s) " % otype,
+                                                                False: ""}[otype is not None],
+                                         {True: "(SubType: %s) " % sub_type,
+                                          False: ""}[sub_type is not None],
+                                         {True: "(Encoded with %s)" % encoding,
+                                          False: ""}[encoding is not None]))
+                temp_path_name = "EmbeddedFile_%s%s.obj" % (obj, {True: "_%s" % encoding,
+                                                                  False: ""}[encoding is not None])
+                temp_path = os.path.join(self.working_directory, temp_path_name)
+                f = open(temp_path, "wb")
+                f.write(data)
+                f.close()
+                f_list.append(temp_path)
+
+                cur_res.add_line(["The EmbeddedFile object was saved as ", temp_path_name])
+                res_list.append(cur_res)
+
+        elif otype not in BANNED_TYPES:
+            cur_res = ResultSection(SCORE['NULL'], 'Unknown stream found [obj: %s %s] %s%s%s' %
+                                    (obj, version, {True: "(Type: %s) " % otype,
+                                                    False: ""}[otype is not None],
+                                     {True: "(SubType: %s) " % sub_type,
+                                      False: ""}[sub_type is not None],
+                                     {True: "(Encoded with %s)" % encoding,
+                                      False: ""}[encoding is not None]))
+            for line in val.splitlines():
+                cur_res.add_line(line)
+
+            emb_res = ResultSection(SCORE.NULL, 'First 256 bytes', parent=cur_res)
+            emb_res.set_body(hexdump(data[:256]), TEXT_FORMAT.MEMORY_DUMP)
+            res_list.append(cur_res)
+
+    def inspect_js(self, cur_obj):
+        cur_res = ResultSection(SCORE['NULL'], 'Object [%s %s] contains %s block of Javascript' %
+                                (obj, version, len(cur_obj.JSCode)))
+        score_modifier = SCORE['NULL']
+
+        js_idx = 0
+        for js in cur_obj.JSCode:
+            js_idx += 1
+            js_score = 0
+            js_code, unescaped_bytes, _, _ = analyseJS(js)
+
+            js_dump += [x for x in js_code if not isPostscript(x)]
+
+            # Malicious characteristics
+            big_buffs = self.get_big_buffs("".join(js_code))
+            if len(big_buffs) > 0:
+                js_score += SCORE['VHIGH'] * len(big_buffs)
+            has_eval, has_unescape = self.check_dangerous_func("".join(js_code))
+            if has_unescape:
+                js_score += SCORE['HIGH']
+            if has_eval:
+                js_score += SCORE['HIGH']
+
+            js_cmt = ""
+            if has_eval or has_unescape or len(big_buffs) > 0:
+                score_modifier += js_score
+                js_cmt = "Suspiciously malicious "
+                file_res.add_tag(TAG_TYPE['FILE_SUMMARY'], "Suspicious javascript in PDF",
+                                 TAG_WEIGHT['MED'], usage='IDENTIFICATION')
+                file_res.report_heuristic(PeePDF.AL_PeePDF_007)
+            js_res = ResultSection(0, "%sJavascript Code (block: %s)" % (js_cmt, js_idx),
+                                   parent=cur_res)
+
+            if js_score > SCORE['NULL']:
+                temp_js_outname = "object%s-%s_%s.js" % (obj, version, js_idx)
+                temp_js_path = os.path.join(self.working_directory, temp_js_outname)
+                temp_js_bin = "".join(js_code).encode("utf-8")
+                f = open(temp_js_path, "wb")
+                f.write(temp_js_bin)
+                f.close()
+                f_list.append(temp_js_path)
+
+                js_res.add_line(["The javascript block was saved as ", temp_js_outname])
+                if has_eval or has_unescape:
+                    analysis_score = SCORE['NULL']
+                    analysis_res = ResultSection(analysis_score, "[Suspicious Functions]",
+                                                 parent=js_res)
+                    if has_eval:
+                        analysis_res.add_line("eval: This javascript block uses eval() function"
+                                              " which is often used to launch deobfuscated"
+                                              " javascript code.")
+                        analysis_score += SCORE['HIGH']
+                        file_res.report_heuristic(PeePDF.AL_PeePDF_003)
+                    if has_unescape:
+                        analysis_res.add_line("unescape: This javascript block uses unescape() "
+                                              "function. It may be legitimate but it is definitely"
+                                              " suspicious since malware often use this to "
+                                              "deobfuscate code blocks.")
+                        analysis_score += SCORE['HIGH']
+                        file_res.report_heuristic(PeePDF.AL_PeePDF_004)
+
+                    analysis_res.change_score(analysis_score)
+
+                buff_idx = 0
+                for buff in big_buffs:
+                    buff_idx += 1
+                    error, new_buff = unescape(buff)
+                    if error == 0:
+                        buff = new_buff
+
+                    if buff not in unescaped_bytes:
+                        temp_path_name = None
+                        if ";base64," in buff[:100] and "data:" in buff[:100]:
+                            temp_path_name = "obj%s_unb64_%s.buff" % (obj, buff_idx)
+                            try:
+                                buff = b64decode(buff.split(";base64,")[1].strip())
+                                temp_path = os.path.join(self.working_directory, temp_path_name)
+                                f = open(temp_path, "wb")
+                                f.write(buff)
+                                f.close()
+                                f_list.append(temp_path)
+                            except:
+                                self.log.error("Found 'data:;base64, ' buffer "
+                                               "but failed to base64 decode.")
+                                temp_path_name = None
+
+                        ResultSection(SCORE['VHIGH'],
+                                      "A %s bytes buffer was found in the javascript "
+                                      "block%s. Here are the first 256 bytes." %
+                                      (len(buff), {True: " and was resubmitted as %s" %
+                                                         temp_path_name,
+                                                   False: ""}[temp_path_name is not None]),
+                                      parent=js_res, body=hexdump(buff[:256]),
+                                      body_format=TEXT_FORMAT.MEMORY_DUMP)
+                        file_res.report_heuristic(PeePDF.AL_PeePDF_002)
+
+            processed_sc = []
+            sc_idx = 0
+            for sc in unescaped_bytes:
+                if sc not in processed_sc:
+                    sc_idx += 1
+                    processed_sc.append(sc)
+
+                    try:
+                        sc = sc.decode("hex")
+                    except:
+                        pass
+
+                    shell_score = SCORE['VHIGH']
+                    temp_path_name = "obj%s_unescaped_%s.buff" % (obj, sc_idx)
+
+                    shell_res = ResultSection(shell_score,
+                                              "Unknown unescaped  %s bytes "
+                                              "javascript buffer (id: %s) was resubmitted as %s. "
+                                              "Here are the first 256 bytes." % (len(sc),
+                                                                                 sc_idx,
+                                                                                 temp_path_name),
+                                              parent=js_res)
+                    shell_res.set_body(hexdump(sc[:256]), TEXT_FORMAT.MEMORY_DUMP)
+
+                    temp_path = os.path.join(self.working_directory, temp_path_name)
+                    f = open(temp_path, "wb")
+                    f.write(sc)
+                    f.close()
+                    f_list.append(temp_path)
+
+                    file_res.add_tag(TAG_TYPE['FILE_SUMMARY'], "Unescaped Javascript Buffer",
+                                     TAG_WEIGHT['MED'],
+                                     usage='IDENTIFICATION')
+                    file_res.report_heuristic(PeePDF.AL_PeePDF_006)
+                    score_modifier += shell_score
+
+        if score_modifier > SCORE['NULL']:
+            res_list.append(cur_res)
 
     # Gather PDF information
     @staticmethod
@@ -164,13 +374,12 @@ class PeePDF(ServiceBase):
         res.add_line("")
         return res
 
-
-    def get_pdf_version_info(self, stats_dict):
+    def get_pdf_version_info(self, stats_dict, res):
         js_stream = []
-
+        res_sections = []
         for version in range(len(stats_dict['Versions'])):
             stats_version = stats_dict['Versions'][version]
-            res_version = ResultSection('Version ' + str(version))
+            res_version = ResultSection('Version ' + str(version), parent=res)
             if stats_version['Catalog'] is not None:
                 res_version.add_line('Catalog: ' + stats_version['Catalog'])
             else:
@@ -207,8 +416,12 @@ class PeePDF(ServiceBase):
                                      'code (' + stats_version['Objects with JS code'][0] + '): ' +
                                      self.list_first_x(stats_version['Objects with JS code'][1]))
                 js_stream.extend(stats_version['Objects with JS code'][1])
+            res_sections.append(res_version)
 
-        return
+            self.find_suspicious_js(stats_version, res_version)
+            self.find_urls(stats_version, res)
+
+        return res_sections
 
     @staticmethod
     def list_first_x(mylist, size=20):
@@ -329,15 +542,97 @@ class PeePDF(ServiceBase):
 
     # If the file contents of the PDF have either "eval" or "unescape" or
     # we were able to find large buffer variables, this is a good flag for malicious content.
-    @staticmethod
-    def find_suspicious_js():
+    def find_suspicious_js(self, stats_version, res_version):
+        suspicious_score = SCORE['NULL']
+        actions = stats_version['Actions']
+        events = stats_version['Events']
+        vulns = stats_version['Vulns']
+        elements = stats_version['Elements']
+        if events is not None or actions is not None or vulns is not None or elements is not None:
+            res_suspicious = ResultSection(SCORE['NULL'], 'Suspicious elements', parent=res_version)
+            if events is not None:
+                for event in events:
+                    res_suspicious.add_line(event + ': ' + self.list_first_x(events[event]))
+                    suspicious_score += SCORE['LOW']
+            if actions is not None:
+                for action in actions:
+                    res_suspicious.add_line(action + ': ' + self.list_first_x(actions[action]))
+                    suspicious_score += SCORE['LOW']
+            if vulns is not None:
+                for vuln in vulns:
+                    if vuln in vulnsDict:
+                        temp = [vuln, ' (']
+                        for vulnCVE in vulnsDict[vuln]:
+                            if len(temp) != 2:
+                                temp.append(',')
+                            temp.append(vulnCVE)
+                            cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE)
+                            if cve_found:
+                                file_res.add_tag(TAG_TYPE['EXPLOIT_NAME'],
+                                                 vulnCVE[cve_found.start():cve_found.end()],
+                                                 TAG_WEIGHT['MED'],
+                                                 usage='IDENTIFICATION')
+                                file_res.add_tag(TAG_TYPE['FILE_SUMMARY'],
+                                                 vulnCVE[cve_found.start():cve_found.end()],
+                                                 TAG_WEIGHT['MED'],
+                                                 usage='IDENTIFICATION')
+                        temp.append('): ')
+                        temp.append(str(vulns[vuln]))
+                        res_suspicious.add_line(temp)
+                    else:
+                        res_suspicious.add_line(vuln + ': ' + str(vulns[vuln]))
+                    suspicious_score += SCORE['HIGH']
+            if elements is not None:
+                for element in elements:
+                    if element in vulnsDict:
+                        temp = [element, ' (']
+                        for vulnCVE in vulnsDict[element]:
+                            if len(temp) != 2:
+                                temp.append(',')
+                            temp.append(vulnCVE)
+                            cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE)
+                            if cve_found:
+                                file_res.add_tag(TAG_TYPE['EXPLOIT_NAME'],
+                                                 vulnCVE[cve_found.start():cve_found.end()],
+                                                 TAG_WEIGHT['MED'],
+                                                 usage='IDENTIFICATION')
+                                file_res.add_tag(TAG_TYPE['FILE_SUMMARY'],
+                                                 vulnCVE[cve_found.start():cve_found.end()],
+                                                 TAG_WEIGHT['MED'],
+                                                 usage='IDENTIFICATION')
+                        temp.append('): ')
+                        temp.append(str(elements[element]))
+                        res_suspicious.add_line(temp)
+                        suspicious_score += SCORE['HIGH']
+                    else:
+                        res_suspicious.add_line('\t\t' + element + ': ' + str(elements[element]))
+                        suspicious_score += SCORE['LOW']
+            res_suspicious.change_score(suspicious_score)
         return True
+
+    def find_urls(self, stats_version, res):
+        url_score = SCORE['NULL']
+        urls = stats_version['URLs']
+        if urls is not None:
+            res.add_line("")
+            res_url = ResultSection(SCORE['NULL'], 'Found URLs', parent=res)
+            for url in urls:
+                res_url.add_line('\t\t' + url)
+                url_score += SCORE['MED']
+
+            res_url.change_score(url_score)
 
     # noinspection PyUnresolvedReferences
     def import_service_deps(self):
         global analyseJS, isPostscript, PDFParser, vulnsDict, unescape
         from al_services.alsvc_peepdf.peepdf.JSAnalysis import analyseJS, isPostscript, unescape
         from al_services.alsvc_peepdf.peepdf.PDFCore import PDFParser, vulnsDict
+
+
+
+
+
+
 
 
 
