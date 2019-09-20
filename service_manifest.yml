@@ -1,0 +1,30 @@
+name: alsvc4_peepdf
+version: 1
+
+accepts: .pdf
+
+stage: core
+category: Static Analysis
+
+file_required: true
+
+timeout: 60
+
+disable_cache: false
+
+licence_count: 0
+
+supported_platforms: [linux]
+
+heuristics:
+  - description: First Heuristic for alsvc4_peepdf
+    filetype: pdf
+    heur_id: AL_PEEPDF_1
+    name: PDF
+    score: 0
+    attack_id: T1001
+
+docker_config:
+  image: cccs/assemblyline-service-resultsample:latest
+  cpu_cores: 1.0
+  ram_mb: 1024

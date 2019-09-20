@@ -9,10 +9,9 @@ from base64 import b64decode
 from textwrap import dedent
 
 from assemblyline.common.hexdump import hexdump
-from assemblyline.al.common.heuristics import Heuristic
-from assemblyline.al.common.result import Result, ResultSection
-from assemblyline.al.common.result import SCORE, TAG_TYPE, TAG_WEIGHT, TEXT_FORMAT
-from assemblyline.al.service.base import ServiceBase
+from assemblyline_v4_service.common.result import Result, ResultSection, Heuristic
+#from assemblyline.al.common.result import SCORE, TAG_TYPE, TAG_WEIGHT, TEXT_FORMAT
+from assemblyline_v4_service.common.base import ServiceBase
 
 BANNED_TYPES = ["xref", "objstm", "xobject", "metadata", "3d", "pattern", None]
 
@@ -27,8 +26,32 @@ def validate_non_humanreadable_buff(data, buff_min_size=256, whitespace_ratio=0.
     return False
 
 
-# noinspection PyGlobalUndefined
 class PeePDF(ServiceBase):
+    def __init__(self, cfg=None):
+        super(PeePDF, self).__init__(cfg)
+        self.max_pdf_size = cfg.get('max_pdf_size', 3000000)
+
+    def execute(self, request):
+        request.result = Result()
+        temp_filename = request.download()
+
+        # Filter out large documents
+        if os.path.getsize(temp_filename) > self.max_pdf_size:
+            request.result.add_section(ResultSection(SCORE['NULL'], "PDF Analysis of the file was skipped because the "
+                                                                    "file is too big (limit is %i MB)." % (
+                                                             self.max_pdf_size / 1000 / 1000)))
+            return
+
+        filename = os.path.basename(temp_filename)
+        file_content = ''
+        with open(temp_filename, 'r') as f:
+            file_content = f.read()
+
+        if '<xdp:xdp' in file_content:
+            self.find_pdf_in_xdp(filename, file_content, request)
+
+        self.peepdf_analysis(temp_filename, file_content, request)
+
     AL_PeePDF_001 = Heuristic("AL_PeePDF_001", "Embedded PDF in XDP", "document/pdf",
                               dedent("""\
                                      If there is the <chunk> tag in the PDF file contents, there is an 
@@ -65,24 +88,38 @@ class PeePDF(ServiceBase):
                                      we were able to find large buffer variables, this is a good flag 
                                      for malicious content.
                                      """))
-    
-    SERVICE_ACCEPTS = '(document/pdf|code/xml)'
-    SERVICE_CATEGORY = "Static Analysis"
-    SERVICE_DESCRIPTION = "This service uses the Python PeePDF library information from PDFs including javascript " \
-                          "blocks which it will attempt to deobfuscate, if necessary, for further analysis."
-    SERVICE_ENABLED = True
-    SERVICE_REVISION = ServiceBase.parse_revision('$Id$')
-    SERVICE_VERSION = '1'
-    SERVICE_CPU_CORES = 0.5
-    SERVICE_RAM_MB = 512
 
-    SERVICE_DEFAULT_CONFIG = {
-        'max_pdf_size': 3000000
-    }
+    # Check if there is the <chunk> tag in the PDF file contents. If so, there is an embedded PDF in the XDP.
+    @staticmethod
+    def find_pdf_in_xdp(self, filename, request):
 
-    def __init__(self, cfg=None):
-        super(PeePDF, self).__init__(cfg)
-        self.max_pdf_size = cfg.get('max_pdf_size', 3000000)
+    # Search for a buffer within the JavaScript code.
+    @staticmethod
+    def find_large_buffers():
+
+    # Search for use(s) of the eval() function within the JavaScript block.
+    # This is commonly used to launch deobfuscated javascript code.
+    @staticmethod
+    def find_eval():
+
+    # Search for use(s) of the unescape() function within the javascript block.
+    # Malware could use this to deobfuscate code blocks.
+    @staticmethod
+    def find_unescape():
+
+    # Getting the unescaped bytes from the PeePDF tool and running those
+    # in an emulator, if they execute then there was hidden shellcode found inside.
+    @staticmethod
+    def find_js_shellcode():
+
+    # If looking for JavaScript shell code fails, the JavaScript is an unknown unescaped buffer.
+    @staticmethod
+    def find_unescape_js_buffer():
+
+    # If the file contents of the PDF have either "eval" or "unescape" or
+    # we were able to find large buffer variables, this is a good flag for malicious content.
+    @staticmethod
+    def find_suspicious_js():
 
     # noinspection PyUnresolvedReferences
     def import_service_deps(self):
@@ -131,28 +168,6 @@ class PeePDF(ServiceBase):
                 self._report_embedded_xdp(file_res, chunk_number, cbin, leftover)
 
         return file_res
-
-    def execute(self, request):
-        request.result = Result()
-        temp_filename = request.download()
-
-        # Filter out large documents
-        if os.path.getsize(temp_filename) > self.max_pdf_size:
-            request.result.add_section(ResultSection(SCORE['NULL'], "PDF Analysis of the file was skipped because the "
-                                                                    "file is too big (limit is %i MB)." % (
-                                                                    self.max_pdf_size / 1000 / 1000)))
-            return
-
-        filename = os.path.basename(temp_filename)
-        # noinspection PyUnusedLocal
-        file_content = ''
-        with open(temp_filename, 'r') as f:
-            file_content = f.read()
-
-        if '<xdp:xdp' in file_content:
-            self.find_xdp_embedded(filename, file_content, request)
-
-        self.peepdf_analysis(temp_filename, file_content, request)
 
     # noinspection PyBroadException
     @staticmethod
