@@ -37,20 +37,12 @@ class PeePDF(ServiceBase):
 
         # Filter out large documents
         if os.path.getsize(temp_filename) > self.max_pdf_size:
-            request.result.add_section(ResultSection(SCORE['NULL'], "PDF Analysis of the file was skipped because the "
+            request.result.add_section(ResultSection("PDF Analysis of the file was skipped because the "
                                                                     "file is too big (limit is %i MB)." % (
                                                              self.max_pdf_size / 1000 / 1000)))
             return
 
-        filename = os.path.basename(temp_filename)
-        file_content = ''
-        with open(temp_filename, 'r') as f:
-            file_content = f.read()
-
-        if '<xdp:xdp' in file_content:
-            self.find_pdf_in_xdp(filename, file_content, request)
-
-        self.peepdf_analysis(temp_filename, file_content, request)
+        self.peepdf_analysis(temp_filename, request)
 
     AL_PeePDF_001 = Heuristic("AL_PeePDF_001", "Embedded PDF in XDP", "document/pdf",
                               dedent("""\
@@ -89,37 +81,149 @@ class PeePDF(ServiceBase):
                                      for malicious content.
                                      """))
 
+    def peepdf_analysis(self, temp_filename, request):
+        filename = os.path.basename(temp_filename)
+        file_content = ''
+        with open(temp_filename, 'r') as f:
+            file_content = f.read()
+
+        if '<xdp:xdp' in file_content:
+            embedded_pdf = self.find_pdf_in_xdp(filename, file_content, request)
+
+        buffers = self.find_large_buffers(file_content)
+        found_eval = self.find_eval()
+        found_unescape = self.find_unescape()
+        js_shellcode = self.find_js_shellcode()
+        unescape_js_buffer = self.find_unescape_js_buffer()
+        suspicious_js = self.find_suspicious_js()
+
+        if len(buffers) > 0:
+            js_score += SCORE['VHIGH'] * len(big_buffs)
+
+        if found_eval:
+            js_score += SCORE['HIGH']
+
+        if found_unescape:
+            js_score += SCORE['HIGH']
+
+
+
     # Check if there is the <chunk> tag in the PDF file contents. If so, there is an embedded PDF in the XDP.
     @staticmethod
     def find_pdf_in_xdp(self, filename, request):
+        return True
 
     # Search for a buffer within the JavaScript code.
     @staticmethod
-    def find_large_buffers():
+    def find_large_buffers(data, buff_min_size=256):
+        # Hunt for big variables
+        var_re = r'[^\\]?"(.*?[^\\])"'
+        last_m = None
+        out = []
+
+        for m in re.finditer(var_re, data):
+            # noinspection PyUnresolvedReferences
+            pos = m.regs[0]
+            match = m.group(1)
+            if last_m:
+                last_pos, last_match = last_m
+                between = data[last_pos[1]:pos[0] + 1]
+                try:
+                    between, rest = between.split("//", 1)
+                    try:
+                        between = between.strip() + rest.split("\n", 1)[1].strip()
+                    except:
+                        pass
+                except:
+                    pass
+                finally:
+                    between = between.strip()
+
+                if between == "+":
+                    match = last_match + match
+                    pos = (last_pos[0], pos[1])
+                else:
+                    if validate_non_humanreadable_buff(last_match, buff_min_size=buff_min_size):
+                        out.append(last_match)
+
+            last_m = (pos, match)
+
+        if last_m:
+            if validate_non_humanreadable_buff(last_m[1]):
+                out.append(last_m[1])
+
+        # Hunt for big comments
+        var_comm_re = r"<!--(.*?)--\s?>"
+
+        for m in re.finditer(var_comm_re, data, flags=re.DOTALL):
+            match = m.group(1)
+            if validate_non_humanreadable_buff(match):
+                out.append(match)
+
+        return out
 
     # Search for use(s) of the eval() function within the JavaScript block.
     # This is commonly used to launch deobfuscated javascript code.
     @staticmethod
-    def find_eval():
+    def find_eval(data):
+        has_eval = False
+        # eval
+        temp_eval = data.split("eval")
+        if len(temp_eval) > 1:
+            idx = 0
+            for i in temp_eval[:-1]:
+                idx += 1
+                if (97 <= ord(i[-1]) <= 122) or (65 <= ord(i[-1]) <= 90):
+                    continue
+                if (97 <= ord(temp_eval[idx][0]) <= 122) or \
+                        (65 <= ord(temp_eval[idx][0]) <= 90):
+                    continue
+
+                has_eval = True
+                break
+        return has_eval
 
     # Search for use(s) of the unescape() function within the javascript block.
     # Malware could use this to deobfuscate code blocks.
     @staticmethod
-    def find_unescape():
+    def find_unescape(data):
+        has_unescape = False
+        # unescape
+        temp_unesc = data.split("unescape")
+        if len(temp_unesc) > 1:
+            idx = 0
+            for i in temp_unesc[:-1]:
+                idx += 1
+                if (97 <= ord(i[-1]) <= 122) or (65 <= ord(i[-1]) <= 90):
+                    continue
+                if (97 <= ord(temp_unesc[idx][0]) <= 122) or \
+                        (65 <= ord(temp_unesc[idx][0]) <= 90):
+                    continue
+
+                has_unescape = True
+                break
+        return has_unescape
 
     # Getting the unescaped bytes from the PeePDF tool and running those
     # in an emulator, if they execute then there was hidden shellcode found inside.
     @staticmethod
     def find_js_shellcode():
+        return True
 
     # If looking for JavaScript shell code fails, the JavaScript is an unknown unescaped buffer.
     @staticmethod
     def find_unescape_js_buffer():
+        return True
 
     # If the file contents of the PDF have either "eval" or "unescape" or
     # we were able to find large buffer variables, this is a good flag for malicious content.
     @staticmethod
     def find_suspicious_js():
+        return True
+
+
+
+
 
     # noinspection PyUnresolvedReferences
     def import_service_deps(self):
@@ -217,42 +321,6 @@ class PeePDF(ServiceBase):
                 out.append(match)
 
         return out
-
-    @staticmethod
-    def check_dangerous_func(data):
-        has_eval = False
-        has_unescape = False
-        # eval
-        temp_eval = data.split("eval")
-        if len(temp_eval) > 1:
-            idx = 0
-            for i in temp_eval[:-1]:
-                idx += 1
-                if (97 <= ord(i[-1]) <= 122) or (65 <= ord(i[-1]) <= 90):
-                    continue
-                if (97 <= ord(temp_eval[idx][0]) <= 122) or \
-                        (65 <= ord(temp_eval[idx][0]) <= 90):
-                    continue
-
-                has_eval = True
-                break
-
-        # unescape
-        temp_unesc = data.split("unescape")
-        if len(temp_unesc) > 1:
-            idx = 0
-            for i in temp_unesc[:-1]:
-                idx += 1
-                if (97 <= ord(i[-1]) <= 122) or (65 <= ord(i[-1]) <= 90):
-                    continue
-                if (97 <= ord(temp_unesc[idx][0]) <= 122) or \
-                        (65 <= ord(temp_unesc[idx][0]) <= 90):
-                    continue
-
-                has_unescape = True
-                break
-
-        return has_eval, has_unescape
 
     @staticmethod
     def list_first_x(mylist, size=20):
