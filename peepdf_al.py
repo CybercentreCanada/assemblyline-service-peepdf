@@ -82,31 +82,143 @@ class PeePDF(ServiceBase):
                                      """))
 
     def peepdf_analysis(self, temp_filename, request):
-        filename = os.path.basename(temp_filename)
-        file_content = ''
-        with open(temp_filename, 'r') as f:
-            file_content = f.read()
 
-        if '<xdp:xdp' in file_content:
-            embedded_pdf = self.find_pdf_in_xdp(filename, file_content, request)
+        try:
+            filename = os.path.basename(temp_filename)
+            file_content = ''
+            with open(temp_filename, 'r') as f:
+                file_content = f.read()
 
-        buffers = self.find_large_buffers(file_content)
-        found_eval = self.find_eval()
-        found_unescape = self.find_unescape()
-        js_shellcode = self.find_js_shellcode()
-        unescape_js_buffer = self.find_unescape_js_buffer()
-        suspicious_js = self.find_suspicious_js()
+            if '<xdp:xdp' in file_content:
+                embedded_pdf = self.find_pdf_in_xdp(filename, file_content, request)
 
-        if len(buffers) > 0:
-            js_score += SCORE['VHIGH'] * len(big_buffs)
+            pdf_parser = PDFParser()
+            ret, pdf_file = pdf_parser.parse(temp_filename, True, False, file_content)
+            if ret == 0:
+                stats_dict = pdf_file.getStats()
 
-        if found_eval:
-            js_score += SCORE['HIGH']
+                if ", ".join(stats_dict['Errors']) == "Bad PDF header, %%EOF not found, PDF sections not found, No " \
+                                                      "indirect objects found in the body":
+                    # Not a PDF
+                    return
 
-        if found_unescape:
-            js_score += SCORE['HIGH']
+                request.result.add_section(self.get_pdf_info(stats_dict))
+                request.result.add_section(self.get_pdf_version_info(stats_dict))
 
 
+            buffers = self.find_large_buffers(file_content)
+            found_eval = self.find_eval(file_content)
+            found_unescape = self.find_unescape(file_content)
+            js_shellcode = self.find_js_shellcode()
+            unescape_js_buffer = self.find_unescape_js_buffer()
+            suspicious_js = self.find_suspicious_js()
+
+            if len(buffers) > 0:
+                js_score += SCORE['VHIGH'] * len(big_buffs)
+
+            if found_eval:
+                js_score += SCORE['HIGH']
+
+            if found_unescape:
+                js_score += SCORE['HIGH']
+
+        finally:
+            try:
+                del pdf_file
+            except:
+                pass
+
+            try:
+                del pdf_parser
+            except:
+                pass
+
+            gc.collect()
+
+
+    # Gather PDF information
+    @staticmethod
+    def get_pdf_info(stats_dict):
+        res = ResultSection("PDF File information")
+        res.add_line('File: ' + stats_dict['File'])
+        res.add_line(['MD5: ', stats_dict['MD5']])
+        res.add_line(['SHA1: ', stats_dict['SHA1']])
+        res.add_line('SHA256: ' + stats_dict['SHA256'])
+        res.add_line(['Size: ', stats_dict['Size'], ' bytes'])
+        res.add_line('Version: ' + stats_dict['Version'])
+        res.add_line('Binary: ' + stats_dict['Binary'])
+        res.add_line('Linearized: ' + stats_dict['Linearized'])
+        res.add_line('Encrypted: ' + stats_dict['Encrypted'])
+        if stats_dict['Encryption Algorithms']:
+            temp = ' ('
+            for algorithmInfo in stats_dict['Encryption Algorithms']:
+                temp += algorithmInfo[0] + ' ' + str(algorithmInfo[1]) + ' bits, '
+            temp = temp[:-2] + ')'
+            res.add_line(temp)
+        res.add_line('Updates: ' + stats_dict['Updates'])
+        res.add_line('Objects: ' + stats_dict['Objects'])
+        res.add_line('Streams: ' + stats_dict['Streams'])
+        res.add_line('Comments: ' + stats_dict['Comments'])
+        res.add_line('Errors: ' + {True: ", ".join(stats_dict['Errors']),
+                                   False: "None"}[len(stats_dict['Errors']) != 0])
+        res.add_line("")
+        return res
+
+
+    def get_pdf_version_info(self, stats_dict):
+        js_stream = []
+
+        for version in range(len(stats_dict['Versions'])):
+            stats_version = stats_dict['Versions'][version]
+            res_version = ResultSection('Version ' + str(version))
+            if stats_version['Catalog'] is not None:
+                res_version.add_line('Catalog: ' + stats_version['Catalog'])
+            else:
+                res_version.add_line('Catalog: ' + 'No')
+            if stats_version['Info'] is not None:
+                res_version.add_line('Info: ' + stats_version['Info'])
+            else:
+                res_version.add_line('Info: ' + 'No')
+            res_version.add_line('Objects (' + stats_version['Objects'][0] + '): ' +
+                                 self.list_first_x(stats_version['Objects'][1]))
+            if stats_version['Compressed Objects'] is not None:
+                res_version.add_line('Compressed objects (' + stats_version['Compressed Objects'][0] + '): ' +
+                                     self.list_first_x(stats_version['Compressed Objects'][1]))
+
+            if stats_version['Errors'] is not None:
+                res_version.add_line('Errors (' + stats_version['Errors'][0] + '): ' +
+                                     self.list_first_x(stats_version['Errors'][1]))
+            res_version.add_line('Streams (' + stats_version['Streams'][0] + '): ' +
+                                 self.list_first_x(stats_version['Streams'][1]))
+            if stats_version['Xref Streams'] is not None:
+                res_version.add_line('Xref streams (' + stats_version['Xref Streams'][0] + '): ' +
+                                     self.list_first_x(stats_version['Xref Streams'][1]))
+            if stats_version['Object Streams'] is not None:
+                res_version.add_line('Object streams (' + stats_version['Object Streams'][0] + '): ' +
+                                     self.list_first_x(stats_version['Object Streams'][1]))
+            if int(stats_version['Streams'][0]) > 0:
+                res_version.add_line('Encoded (' + stats_version['Encoded'][0] + '): ' +
+                                     self.list_first_x(stats_version['Encoded'][1]))
+                if stats_version['Decoding Errors'] is not None:
+                    res_version.add_line('Decoding errors (' + stats_version['Decoding Errors'][0] + '): ' +
+                                         self.list_first_x(stats_version['Decoding Errors'][1]))
+            if stats_version['Objects with JS code'] is not None:
+                res_version.add_line('Objects with JS '
+                                     'code (' + stats_version['Objects with JS code'][0] + '): ' +
+                                     self.list_first_x(stats_version['Objects with JS code'][1]))
+                js_stream.extend(stats_version['Objects with JS code'][1])
+
+        return
+
+    @staticmethod
+    def list_first_x(mylist, size=20):
+        add_reminder = len(mylist) > size
+
+        mylist = mylist[:size]
+        if add_reminder:
+            mylist.append("...")
+
+        return str(mylist)
 
     # Check if there is the <chunk> tag in the PDF file contents. If so, there is an embedded PDF in the XDP.
     @staticmethod
@@ -221,15 +333,13 @@ class PeePDF(ServiceBase):
     def find_suspicious_js():
         return True
 
-
-
-
-
     # noinspection PyUnresolvedReferences
     def import_service_deps(self):
         global analyseJS, isPostscript, PDFParser, vulnsDict, unescape
         from al_services.alsvc_peepdf.peepdf.JSAnalysis import analyseJS, isPostscript, unescape
         from al_services.alsvc_peepdf.peepdf.PDFCore import PDFParser, vulnsDict
+
+
 
     # noinspection PyUnusedLocal,PyMethodMayBeStatic
     def _report_embedded_xdp(self, file_res, chunk_number, binary, leftover):
@@ -272,65 +382,6 @@ class PeePDF(ServiceBase):
                 self._report_embedded_xdp(file_res, chunk_number, cbin, leftover)
 
         return file_res
-
-    # noinspection PyBroadException
-    @staticmethod
-    def get_big_buffs(data, buff_min_size=256):
-        # Hunt for big variables
-        var_re = r'[^\\]?"(.*?[^\\])"'
-        last_m = None
-        out = []
-
-        for m in re.finditer(var_re, data):
-            # noinspection PyUnresolvedReferences
-            pos = m.regs[0]
-            match = m.group(1)
-            if last_m:
-                last_pos, last_match = last_m
-                between = data[last_pos[1]:pos[0] + 1]
-                try:
-                    between, rest = between.split("//", 1)
-                    try:
-                        between = between.strip() + rest.split("\n", 1)[1].strip()
-                    except:
-                        pass
-                except:
-                    pass
-                finally:
-                    between = between.strip()
-
-                if between == "+":
-                    match = last_match + match
-                    pos = (last_pos[0], pos[1])
-                else:
-                    if validate_non_humanreadable_buff(last_match, buff_min_size=buff_min_size):
-                        out.append(last_match)
-
-            last_m = (pos, match)
-
-        if last_m:
-            if validate_non_humanreadable_buff(last_m[1]):
-                out.append(last_m[1])
-
-        # Hunt for big comments
-        var_comm_re = r"<!--(.*?)--\s?>"
-
-        for m in re.finditer(var_comm_re, data, flags=re.DOTALL):
-            match = m.group(1)
-            if validate_non_humanreadable_buff(match):
-                out.append(match)
-
-        return out
-
-    @staticmethod
-    def list_first_x(mylist, size=20):
-        add_reminder = len(mylist) > size
-
-        mylist = mylist[:size]
-        if add_reminder:
-            mylist.append("...")
-
-        return str(mylist)
 
     # noinspection PyBroadException,PyUnboundLocalVariable
     def peepdf_analysis(self, temp_filename, file_content, request):
