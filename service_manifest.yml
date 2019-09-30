@@ -1,9 +1,12 @@
-name: alsvc4_peepdf
+name: PeePDF
 version: 1
+description: >
+  This service uses the Python PeePDF library information from PDFs including JavaScript
+  blocks which it will attempt to deobfuscate, if necessary, for further analysis.
 
-accepts: .pdf
+accepts: .pdf|.xml
 
-stage: core
+stage: CORE
 category: Static Analysis
 
 file_required: true
@@ -17,14 +20,60 @@ licence_count: 0
 supported_platforms: [linux]
 
 heuristics:
-  - description: First Heuristic for alsvc4_peepdf
+  - description: If there is the <chunk> tag in the PDF file contents, there is an embedded PDF in the XDP.
     filetype: pdf
-    heur_id: AL_PEEPDF_1
-    name: PDF
+    heur_id: 1
+    name: Embedded PDF in XDP
     score: 0
-    attack_id: T1001
+    attack_id: AL_PEEPDF_1
+
+  - description: A buffer was found in the JavaScript code.
+      filetype: pdf
+      heur_id: 2
+      name: Large Buffers
+      score: 0
+      attack_id: AL_PEEPDF_2
+
+  - description: The eval() function is found in the javascript block. This is
+      commonly used to launch deofuscated javascript code.
+      filetype: pdf
+      heur_id: 3
+      name: Contains eval
+      score: 0
+      attack_id: AL_PEEPDF_3
+
+  - description: The unescape() function is found in the javascript block. Malware
+      could use this to deobfuscate code blocks.
+    filetype: pdf
+    heur_id: 4
+    name: Contains unescape
+    score: 0
+    attack_id: AL_PEEPDF_4
+
+  - description: Hidden shellcode found inside unescaped bytes.
+      filetype: pdf
+      heur_id: 5
+      name: JavaScript Shellcode
+      score: 0
+      attack_id: AL_PEEPDF_5
+
+  - description: If looking for JavaScript shellcode fails, the JavaScript is an
+      unknown unescaped buffer.
+      filetype: pdf
+      heur_id: 6
+      name: Unescaped JavaScript Buffer
+      score: 0
+      attack_id: AL_PEEPDF_6
+
+  - description: If the file contents of the PDF has either "eval" or "unescape" or
+      large buffer variables were found.
+      filetype: pdf
+      heur_id: 7
+      name: Suspicious JavaScript
+      score: 0
+      attack_id: AL_PEEPDF_7
 
 docker_config:
-  image: cccs/assemblyline-service-resultsample:latest
-  cpu_cores: 1.0
-  ram_mb: 1024
+  image: cccs/assemblyline-v4-service-base:latest
+  cpu_cores: 0.5
+  ram_mb: 512
