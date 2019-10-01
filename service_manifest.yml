@@ -24,14 +24,14 @@ heuristics:
     filetype: pdf
     heur_id: 1
     name: Embedded PDF in XDP
-    score: 0
+    score: 1
     attack_id: AL_PEEPDF_1
 
   - description: A buffer was found in the JavaScript code.
       filetype: pdf
       heur_id: 2
       name: Large Buffers
-      score: 0
+      score: 500
       attack_id: AL_PEEPDF_2
 
   - description: The eval() function is found in the javascript block. This is
@@ -39,7 +39,7 @@ heuristics:
       filetype: pdf
       heur_id: 3
       name: Contains eval
-      score: 0
+      score: 100
       attack_id: AL_PEEPDF_3
 
   - description: The unescape() function is found in the javascript block. Malware
@@ -47,7 +47,7 @@ heuristics:
     filetype: pdf
     heur_id: 4
     name: Contains unescape
-    score: 0
+    score: 100
     attack_id: AL_PEEPDF_4
 
   - description: Hidden shellcode found inside unescaped bytes.
@@ -62,16 +62,30 @@ heuristics:
       filetype: pdf
       heur_id: 6
       name: Unescaped JavaScript Buffer
-      score: 0
+      score: 500
       attack_id: AL_PEEPDF_6
 
   - description: If the file contents of the PDF has either "eval" or "unescape" or
       large buffer variables were found.
       filetype: pdf
       heur_id: 7
-      name: Suspicious JavaScript
-      score: 0
+      name: Suspicious JavaScript Code
+      score: 50
       attack_id: AL_PEEPDF_7
+
+  - description: Suspicious JavaScript elements have been found within the file.
+      filetype: pdf
+      heur_id: 8
+      name: Suspicious JavaScript Elements
+      score: 100
+      attack_id: AL_PEEPDF_8
+
+  - description: URL(s) have been found within the file.
+      filetype: pdf
+      heur_id: 9
+      name: Contains URL(s)
+      score: 50
+      attack_id: AL_PEEPDF_9
 
 docker_config:
   image: cccs/assemblyline-v4-service-base:latest

@@ -8,7 +8,7 @@ import re
 from base64 import b64decode
 
 from assemblyline.common.hexdump import hexdump
-from assemblyline_v4_service.common.result import Result, ResultSection, Heuristic
+from assemblyline_v4_service.common.result import Result, ResultSection, Heuristic, BODY_FORMAT
 from assemblyline_v4_service.common.base import ServiceBase
 
 BANNED_TYPES = ["xref", "objstm", "xobject", "metadata", "3d", "pattern", None]
@@ -41,9 +41,8 @@ class PeePDF(ServiceBase):
     def _report_embedded_xdp(self, file_res, chunk_number, binary, leftover):
         res_section = ResultSection(["Found %s " % chunk_number, "Embedded PDF (in XDP)"])
         res_section.set_heuristic(1, "AL_PEEPDF_1")
+        res_section.add_tag('FILE_SUMMARY', "Embedded PDF (in XDP)", 10, 'IDENTIFICATION')
         file_res.add_section(res_section)
-        #file_res.add_tag('FILE_SUMMARY', "Embedded PDF (in XDP)", 10, 'IDENTIFICATION')
-        #file_res.report_heuristic(PeePDF.AL_PeePDF_001)
 
     def find_xdp_embedded(self, filename, cbin, request):
         file_res = request.result
@@ -281,7 +280,6 @@ class PeePDF(ServiceBase):
                                              self.list_first_x(stats_version['Objects with JS code'][1]))
                         js_stream.extend(stats_version['Objects with JS code'][1])
 
-                    suspicious_score = 0
                     actions = stats_version['Actions']
                     events = stats_version['Events']
                     vulns = stats_version['Vulns']
@@ -291,11 +289,11 @@ class PeePDF(ServiceBase):
                         if events is not None:
                             for event in events:
                                 res_suspicious.add_line(event + ': ' + self.list_first_x(events[event]))
-                                suspicious_score += SCORE['LOW']
+                                res_suspicious.set_heuristic(1, "AL_PEEPDF_8")
                         if actions is not None:
                             for action in actions:
                                 res_suspicious.add_line(action + ': ' + self.list_first_x(actions[action]))
-                                suspicious_score += SCORE['LOW']
+                                res_suspicious.set_heuristic(1, "AL_PEEPDF_8")
                         if vulns is not None:
                             for vuln in vulns:
                                 if vuln in vulnsDict:
@@ -319,7 +317,7 @@ class PeePDF(ServiceBase):
                                     res_suspicious.add_line(temp)
                                 else:
                                     res_suspicious.add_line(vuln + ': ' + str(vulns[vuln]))
-                                suspicious_score += SCORE['HIGH']
+                                res_suspicious.set_heuristic(1, "AL_PEEPDF_8")
                         if elements is not None:
                             for element in elements:
                                 if element in vulnsDict:
@@ -332,42 +330,39 @@ class PeePDF(ServiceBase):
                                         if cve_found:
                                             file_res.add_tag('EXPLOIT_NAME',
                                                              vulnCVE[cve_found.start():cve_found.end()],
-                                                             TAG_WEIGHT['MED'],
+                                                             50,
                                                              usage='IDENTIFICATION')
                                             file_res.add_tag('FILE_SUMMARY',
                                                              vulnCVE[cve_found.start():cve_found.end()],
-                                                             TAG_WEIGHT['MED'],
+                                                             50,
                                                              usage='IDENTIFICATION')
                                     temp.append('): ')
                                     temp.append(str(elements[element]))
                                     res_suspicious.add_line(temp)
-                                    suspicious_score += SCORE['HIGH']
+                                    res_suspicious.set_heuristic(1, "AL_PEEPDF_8")
                                 else:
                                     res_suspicious.add_line('\t\t' + element + ': ' + str(elements[element]))
-                                    suspicious_score += SCORE['LOW']
-                        res_suspicious.change_score(suspicious_score)
+                                    res_suspicious.set_heuristic(1, "AL_PEEPDF_8")
 
-                    url_score = SCORE['NULL']
                     urls = stats_version['URLs']
                     if urls is not None:
                         res.add_line("")
-                        res_url = ResultSection(SCORE['NULL'], 'Found URLs', parent=res)
+                        res_url = ResultSection('Found URLs', parent=res)
                         for url in urls:
                             res_url.add_line('\t\t' + url)
-                            url_score += SCORE['MED']
-
-                        res_url.change_score(url_score)
+                            res_url.set_heuristic(1, "AL_PEEPDF_9")
 
                     for obj in stats_version['Objects'][1]:
                         cur_obj = pdf_file.getObject(obj, version)
 
                         if cur_obj.containsJScode:
-                            cur_res = ResultSection(SCORE['NULL'], 'Object [%s %s] contains %s block of Javascript' %
+                            cur_res = ResultSection('Object [%s %s] contains %s block of Javascript' %
                                                     (obj, version, len(cur_obj.JSCode)))
-                            score_modifier = SCORE['NULL']
+                            score_modifier = 0
 
                             js_idx = 0
                             for js in cur_obj.JSCode:
+                                sub_res = ResultSection('Block of JavaScript:', parent=cur_res)
                                 js_idx += 1
                                 js_score = 0
                                 js_code, unescaped_bytes, _, _ = analyseJS(js)
@@ -376,25 +371,27 @@ class PeePDF(ServiceBase):
 
                                 # Malicious characteristics
                                 big_buffs = self.get_big_buffs("".join(js_code))
+                                if len(big_buffs) == 1:
+                                    js_score += 500 * len(big_buffs)
                                 if len(big_buffs) > 0:
-                                    js_score += SCORE['VHIGH'] * len(big_buffs)
+                                    js_score += 500 * len(big_buffs)
                                 has_eval, has_unescape = self.check_dangerous_func("".join(js_code))
                                 if has_unescape:
-                                    js_score += SCORE['HIGH']
+                                    js_score += 100
                                 if has_eval:
-                                    js_score += SCORE['HIGH']
+                                    js_score += 100
 
                                 js_cmt = ""
                                 if has_eval or has_unescape or len(big_buffs) > 0:
                                     score_modifier += js_score
                                     js_cmt = "Suspiciously malicious "
                                     file_res.add_tag('FILE_SUMMARY', "Suspicious javascript in PDF",
-                                                     TAG_WEIGHT['MED'], usage='IDENTIFICATION')
-                                    file_res.report_heuristic(PeePDF.AL_PeePDF_007)
+                                                     50, usage='IDENTIFICATION')
+                                    sub_res.set_heuristic(1, "AL_PEEPDF_7")
                                 js_res = ResultSection(0, "%sJavascript Code (block: %s)" % (js_cmt, js_idx),
-                                                       parent=cur_res)
+                                                       parent=sub_res)
 
-                                if js_score > SCORE['NULL']:
+                                if js_score > 0:
                                     temp_js_outname = "object%s-%s_%s.js" % (obj, version, js_idx)
                                     temp_js_path = os.path.join(self.working_directory, temp_js_outname)
                                     temp_js_bin = "".join(js_code).encode("utf-8")
@@ -403,26 +400,21 @@ class PeePDF(ServiceBase):
                                     f.close()
                                     f_list.append(temp_js_path)
 
-                                    js_res.add_line(["The javascript block was saved as ", temp_js_outname])
+                                    js_res.add_line(["The JavaScript block was saved as ", temp_js_outname])
                                     if has_eval or has_unescape:
-                                        analysis_score = SCORE['NULL']
-                                        analysis_res = ResultSection(analysis_score, "[Suspicious Functions]",
+                                        analysis_res = ResultSection("[Suspicious Functions]",
                                                                      parent=js_res)
                                         if has_eval:
                                             analysis_res.add_line("eval: This javascript block uses eval() function"
                                                                   " which is often used to launch deobfuscated"
                                                                   " javascript code.")
-                                            analysis_score += SCORE['HIGH']
-                                            file_res.report_heuristic(PeePDF.AL_PeePDF_003)
+                                            analysis_res.set_heuristic(1, "AL_PEEPDF_3")
                                         if has_unescape:
                                             analysis_res.add_line("unescape: This javascript block uses unescape() "
                                                                   "function. It may be legitimate but it is definitely"
                                                                   " suspicious since malware often use this to "
                                                                   "deobfuscate code blocks.")
-                                            analysis_score += SCORE['HIGH']
-                                            file_res.report_heuristic(PeePDF.AL_PeePDF_004)
-
-                                        analysis_res.change_score(analysis_score)
+                                            analysis_res.set_heuristic(1, "AL_PEEPDF_3")
 
                                     buff_idx = 0
                                     for buff in big_buffs:
@@ -447,15 +439,14 @@ class PeePDF(ServiceBase):
                                                                    "but failed to base64 decode.")
                                                     temp_path_name = None
 
-                                            ResultSection(SCORE['VHIGH'],
-                                                          "A %s bytes buffer was found in the javascript "
+                                            buff_res = ResultSection("A %s bytes buffer was found in the javascript "
                                                           "block%s. Here are the first 256 bytes." %
                                                           (len(buff), {True: " and was resubmitted as %s" %
                                                                              temp_path_name,
                                                                        False: ""}[temp_path_name is not None]),
                                                           parent=js_res, body=hexdump(buff[:256]),
-                                                          body_format=TEXT_FORMAT.MEMORY_DUMP)
-                                            file_res.report_heuristic(PeePDF.AL_PeePDF_002)
+                                                          body_format=BODY_FORMAT.MEMORY_DUMP)
+                                            buff_res.set_heuristic(1, "AL_PEEPDF_2")
 
                                 processed_sc = []
                                 sc_idx = 0
@@ -469,17 +460,16 @@ class PeePDF(ServiceBase):
                                         except:
                                             pass
 
-                                        shell_score = SCORE['VHIGH']
+                                        shell_score = 500
                                         temp_path_name = "obj%s_unescaped_%s.buff" % (obj, sc_idx)
 
-                                        shell_res = ResultSection(shell_score,
-                                                                  "Unknown unescaped  %s bytes "
+                                        shell_res = ResultSection("Unknown unescaped  %s bytes "
                                                                   "javascript buffer (id: %s) was resubmitted as %s. "
                                                                   "Here are the first 256 bytes." % (len(sc),
                                                                                                      sc_idx,
                                                                                                      temp_path_name),
                                                                   parent=js_res)
-                                        shell_res.set_body(hexdump(sc[:256]), TEXT_FORMAT.MEMORY_DUMP)
+                                        shell_res.set_body(hexdump(sc[:256]), BODY_FORMAT.MEMORY_DUMP)
 
                                         temp_path = os.path.join(self.working_directory, temp_path_name)
                                         f = open(temp_path, "wb")
@@ -488,12 +478,12 @@ class PeePDF(ServiceBase):
                                         f_list.append(temp_path)
 
                                         file_res.add_tag('FILE_SUMMARY', "Unescaped Javascript Buffer",
-                                                         TAG_WEIGHT['MED'],
+                                                         50,
                                                          usage='IDENTIFICATION')
-                                        file_res.report_heuristic(PeePDF.AL_PeePDF_006)
+                                        shell_res.set_heuristic(1, "AL_PEEPDF_6")
                                         score_modifier += shell_score
 
-                            if score_modifier > SCORE['NULL']:
+                            if score_modifier > 0:
                                 res_list.append(cur_res)
 
                         elif cur_obj.type == "stream":
@@ -555,7 +545,7 @@ class PeePDF(ServiceBase):
                                     cur_res.add_line(line)
 
                                 emb_res = ResultSection('First 256 bytes', parent=cur_res)
-                                emb_res.set_body(hexdump(data[:256]), TEXT_FORMAT.MEMORY_DUMP)
+                                emb_res.set_body(hexdump(data[:256]), BODY_FORMAT.MEMORY_DUMP)
                                 res_list.append(cur_res)
                         else:
                             pass
@@ -584,7 +574,7 @@ class PeePDF(ServiceBase):
                     js_dump_res.add_line(["The javascript dump was saved as ", temp_js_dump])
                     js_dump_res.add_line(["The sha1 for the javascript dump is ", temp_js_dump_sha1])
 
-                    file_res.add_tag('PDF_JAVASCRIPT_SHA1', temp_js_dump_sha1, TAG_WEIGHT['HIGH'],
+                    file_res.add_tag('PDF_JAVASCRIPT_SHA1', temp_js_dump_sha1, 100,
                                      usage='CORRELATION')
                     file_res.add_section(js_dump_res)
 
