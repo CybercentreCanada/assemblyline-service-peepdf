@@ -39,7 +39,7 @@ class PeePDF(ServiceBase):
 
     # noinspection PyUnusedLocal,PyMethodMayBeStatic
     def _report_embedded_xdp(self, file_res, chunk_number, binary, leftover):
-        res_section = ResultSection(["Found %s " % chunk_number, "Embedded PDF (in XDP)"])
+        res_section = ResultSection([f"Found {chunk_number}", "Embedded PDF (in XDP)"])
         res_section.set_heuristic(1, "AL_PEEPDF_1")
         res_section.add_tag('FILE_SUMMARY', "Embedded PDF (in XDP)", 10, 'IDENTIFICATION')
         file_res.add_section(res_section)
@@ -68,12 +68,12 @@ class PeePDF(ServiceBase):
                                    "un-base64 the content.")
 
                 if un_b64:
-                    new_filename = "xdp_%d.pdf" % chunk_number
+                    new_filename = f"xdp_{chunk_number}.pdf"
                     file_path = os.path.join(self.working_directory, new_filename)
                     f = open(file_path, "wb")
                     f.write(un_b64)
                     f.close()
-                    request.add_extracted(file_path, "UnXDP from %s" % filename)
+                    request.add_extracted(file_path, f"UnXDP from {filename}")
 
             if chunk_number > 0:
                 self._report_embedded_xdp(file_res, chunk_number, cbin, leftover)
@@ -86,9 +86,8 @@ class PeePDF(ServiceBase):
 
         # Filter out large documents
         if os.path.getsize(temp_filename) > self.max_pdf_size:
-            request.result.add_section(ResultSection("PDF Analysis of the file was skipped because the "
-                                                                    "file is too big (limit is %i MB)." % (
-                                                             self.max_pdf_size / 1000 / 1000)))
+            request.result.add_section(ResultSection(f"PDF Analysis of the file was skipped because the "
+                                                f"file is too big (limit is {(self.max_pdf_size / 1000 / 1000)} MB)."))
             return
 
         filename = os.path.basename(temp_filename)
@@ -356,8 +355,8 @@ class PeePDF(ServiceBase):
                         cur_obj = pdf_file.getObject(obj, version)
 
                         if cur_obj.containsJScode:
-                            cur_res = ResultSection('Object [%s %s] contains %s block of Javascript' %
-                                                    (obj, version, len(cur_obj.JSCode)))
+                            cur_res = ResultSection(f"Object [{obj} {version}] contains {len(cur_obj.JSCode)} "
+                                                    f"block of Javascript")
                             score_modifier = 0
 
                             js_idx = 0
@@ -388,11 +387,11 @@ class PeePDF(ServiceBase):
                                     file_res.add_tag('FILE_SUMMARY', "Suspicious javascript in PDF",
                                                      50, usage='IDENTIFICATION')
                                     sub_res.set_heuristic(1, "AL_PEEPDF_7")
-                                js_res = ResultSection(0, "%sJavascript Code (block: %s)" % (js_cmt, js_idx),
+                                js_res = ResultSection(0, f"{js_cmt}Javascript Code (block: {js_idx})",
                                                        parent=sub_res)
 
                                 if js_score > 0:
-                                    temp_js_outname = "object%s-%s_%s.js" % (obj, version, js_idx)
+                                    temp_js_outname = f"object{obj}-{version}_{js_idx}.js"
                                     temp_js_path = os.path.join(self.working_directory, temp_js_outname)
                                     temp_js_bin = "".join(js_code).encode("utf-8")
                                     f = open(temp_js_path, "wb")
@@ -426,7 +425,7 @@ class PeePDF(ServiceBase):
                                         if buff not in unescaped_bytes:
                                             temp_path_name = None
                                             if ";base64," in buff[:100] and "data:" in buff[:100]:
-                                                temp_path_name = "obj%s_unb64_%s.buff" % (obj, buff_idx)
+                                                temp_path_name = f"obj{obj}_unb64_{buff_idx}.buff"
                                                 try:
                                                     buff = b64decode(buff.split(";base64,")[1].strip())
                                                     temp_path = os.path.join(self.working_directory, temp_path_name)
@@ -439,11 +438,12 @@ class PeePDF(ServiceBase):
                                                                    "but failed to base64 decode.")
                                                     temp_path_name = None
 
-                                            buff_res = ResultSection("A %s bytes buffer was found in the javascript "
-                                                          "block%s. Here are the first 256 bytes." %
-                                                          (len(buff), {True: " and was resubmitted as %s" %
-                                                                             temp_path_name,
-                                                                       False: ""}[temp_path_name is not None]),
+                                            if temp_path_name is not None:
+                                                buff_cond = f" and was resubmitted as {temp_path_name}"
+                                            else:
+                                                buff_cond = ""
+                                            buff_res = ResultSection(f"A {len(buff)} bytes buffer was found in the javascript "
+                                                          f"block{buff_cond}. Here are the first 256 bytes.",
                                                           parent=js_res, body=hexdump(buff[:256]),
                                                           body_format=BODY_FORMAT.MEMORY_DUMP)
                                             buff_res.set_heuristic(1, "AL_PEEPDF_2")
@@ -461,13 +461,11 @@ class PeePDF(ServiceBase):
                                             pass
 
                                         shell_score = 500
-                                        temp_path_name = "obj%s_unescaped_%s.buff" % (obj, sc_idx)
+                                        temp_path_name = f"obj{obj}_unescaped_{sc_idx}.buff"
 
-                                        shell_res = ResultSection("Unknown unescaped  %s bytes "
-                                                                  "javascript buffer (id: %s) was resubmitted as %s. "
-                                                                  "Here are the first 256 bytes." % (len(sc),
-                                                                                                     sc_idx,
-                                                                                                     temp_path_name),
+                                        shell_res = ResultSection(f"Unknown unescaped {len(sc)} bytes "
+                                                                  f"javascript buffer (id: {sc_idx}) was resubmitted as {temp_path_name}. "
+                                                                  "Here are the first 256 bytes.",
                                                                   parent=js_res)
                                         shell_res.set_body(hexdump(sc[:256]), BODY_FORMAT.MEMORY_DUMP)
 
@@ -514,16 +512,24 @@ class PeePDF(ServiceBase):
                             if otype == "embeddedfile":
                                 if len(data) > 4096:
                                     # TODO: we might have to be smarter here.
-                                    cur_res = ResultSection('Embedded file found (%s bytes) [obj: %s %s]'
-                                                                           ' and dumped for analysis %s%s%s' %
-                                                            (length, obj, version, {True: "(Type: %s) " % otype,
-                                                                                    False: ""}[otype is not None],
-                                                             {True: "(SubType: %s) " % sub_type,
-                                                              False: ""}[sub_type is not None],
-                                                             {True: "(Encoded with %s)" % encoding,
-                                                              False: ""}[encoding is not None]))
-                                    temp_path_name = "EmbeddedFile_%s%s.obj" % (obj, {True: "_%s" % encoding,
-                                                                                      False: ""}[encoding is not None])
+                                    if otype is not None:
+                                        otype_str = f"(Type: {otype})"
+                                    else:
+                                        otype_str = ""
+                                    if sub_type is not None:
+                                        sub_type_str = f"(SubType: {sub_type})"
+                                    else:
+                                        sub_type_str = ""
+                                    if encoding is not None:
+                                        encoding_str = f"(Encoded with {encoding})"
+                                        temp_encoding_str = f"_{encoding}"
+                                    else:
+                                        encoding_str = ""
+                                        temp_encoding_str = ""
+                                    cur_res = ResultSection(f'Embedded file found ({length} bytes) [obj: {obj} {version}]'
+                                                                           f' and dumped for analysis {otype_str}{sub_type_str}{encoding_str}')
+
+                                    temp_path_name = f"EmbeddedFile_{obj}{temp_encoding_str}.obj"
                                     temp_path = os.path.join(self.working_directory, temp_path_name)
                                     f = open(temp_path, "wb")
                                     f.write(data)
@@ -534,13 +540,7 @@ class PeePDF(ServiceBase):
                                     res_list.append(cur_res)
 
                             elif otype not in BANNED_TYPES:
-                                cur_res = ResultSection('Unknown stream found [obj: %s %s] %s%s%s' %
-                                                        (obj, version, {True: "(Type: %s) " % otype,
-                                                                        False: ""}[otype is not None],
-                                                         {True: "(SubType: %s) " % sub_type,
-                                                          False: ""}[sub_type is not None],
-                                                         {True: "(Encoded with %s)" % encoding,
-                                                          False: ""}[encoding is not None]))
+                                cur_res = ResultSection(f'Unknown stream found [obj: {obj} {version}] {otype_str}{sub_type_str}{encoding_str}')
                                 for line in val.splitlines():
                                     cur_res.add_line(line)
 
@@ -579,7 +579,7 @@ class PeePDF(ServiceBase):
                     file_res.add_section(js_dump_res)
 
                 for filename in f_list:
-                    request.add_extracted(filename, "Dumped from %s" % os.path.basename(temp_filename))
+                    request.add_extracted(filename, f"Dumped from {os.path.basename(temp_filename)}")
 
             else:
                 res = ResultSection("ERROR: Could not parse file with peepdf.")
