@@ -82,7 +82,7 @@ class PeePDF(ServiceBase):
 
     def execute(self, request):
         request.result = Result()
-        temp_filename = request.file_path()
+        temp_filename = request.file_path
 
         # Filter out large documents
         if os.path.getsize(temp_filename) > self.max_pdf_size:
