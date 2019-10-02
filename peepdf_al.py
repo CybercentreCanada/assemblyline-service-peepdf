@@ -27,9 +27,9 @@ def validate_non_humanreadable_buff(data, buff_min_size=256, whitespace_ratio=0.
 # noinspection PyGlobalUndefined
 class PeePDF(ServiceBase):
 
-    def __init__(self, cfg=None):
-        super(PeePDF, self).__init__(cfg)
-        self.max_pdf_size = cfg.get('max_pdf_size', 3000000)
+    def __init__(self, config=None):
+        super(PeePDF, self).__init__(config)
+        self.max_pdf_size = config.get('max_pdf_size', 3000000)
 
     # noinspection PyUnresolvedReferences
     def import_service_deps(self):
