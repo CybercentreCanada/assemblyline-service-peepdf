@@ -137,7 +137,7 @@ def analyseJS(code):
                                     for url in urls:
                                         if url not in urlsFound:
                                             urlsFound.append(url)
-    except Exception, e :
+    except Exception as e:
         errors.append('Unknown error!! [%s]' % e)
     finally:
         sys.stderr = oldStdErr

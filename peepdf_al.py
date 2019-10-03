@@ -34,8 +34,8 @@ class PeePDF(ServiceBase):
     # noinspection PyUnresolvedReferences
     def import_service_deps(self):
         global analyseJS, isPostscript, PDFParser, vulnsDict, unescape
-        from al_services.alsvc4_peepdf.peepdf.JSAnalysis import analyseJS, isPostscript, unescape
-        from al_services.alsvc4_peepdf.peepdf.PDFCore import PDFParser, vulnsDict
+        from peepdf.JSAnalysis import analyseJS, isPostscript, unescape
+        from peepdf.PDFCore import PDFParser, vulnsDict
 
     # noinspection PyUnusedLocal,PyMethodMayBeStatic
     def _report_embedded_xdp(self, file_res, chunk_number, binary, leftover):
@@ -81,6 +81,7 @@ class PeePDF(ServiceBase):
         return file_res
 
     def execute(self, request):
+        self.import_service_deps()
         request.result = Result()
         temp_filename = request.file_path
 
@@ -93,10 +94,10 @@ class PeePDF(ServiceBase):
         filename = os.path.basename(temp_filename)
         # noinspection PyUnusedLocal
         file_content = ''
-        with open(temp_filename, 'r') as f:
+        with open(temp_filename, 'rb') as f:
             file_content = f.read()
 
-        if '<xdp:xdp' in file_content:
+        if '<xdp:xdp'.encode(encoding='UTF-8') in file_content:
             self.find_xdp_embedded(filename, file_content, request)
 
         self.peepdf_analysis(temp_filename, file_content, request)
