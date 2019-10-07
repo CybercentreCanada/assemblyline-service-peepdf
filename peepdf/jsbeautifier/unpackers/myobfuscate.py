@@ -9,7 +9,7 @@
 # if detect(some_string):
 #     unpacked = unpack(some_string)
 #
-from al_services.alsvc_peepdf.peepdf.jsbeautifier.unpackers import UnpackingError
+from peepdf.jsbeautifier.unpackers import UnpackingError
 
 # CAVEAT by Einar Lielmanis
 
