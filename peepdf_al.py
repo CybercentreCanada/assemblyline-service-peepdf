@@ -33,8 +33,8 @@ class PeePDF(ServiceBase):
 
     # noinspection PyUnresolvedReferences
     def import_service_deps(self):
-        global analyseJS, isPostscript, PDFParser, vulnsDict, unescape
-        from peepdf.JSAnalysis import analyseJS, isPostscript, unescape
+        global analyseJS, PDFParser, vulnsDict, unescape
+        from peepdf.JSAnalysis import analyseJS, unescape
         from peepdf.PDFCore import PDFParser, vulnsDict
 
     # noinspection PyUnusedLocal,PyMethodMayBeStatic
@@ -367,7 +367,7 @@ class PeePDF(ServiceBase):
                                 js_score = 0
                                 js_code, unescaped_bytes, _, _ = analyseJS(js)
 
-                                js_dump += [x for x in js_code if not isPostscript(x)]
+                                js_dump += [x for x in js_code]
 
                                 # Malicious characteristics
                                 big_buffs = self.get_big_buffs("".join(js_code))
