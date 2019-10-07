@@ -3,7 +3,7 @@
 #    http://peepdf.eternal-todo.com
 #    By Jose Miguel Esparza <jesparza AT eternal-todo.com>
 #
-#    Copyright (C) 2012 Jose Miguel Esparza
+#    Copyright (C) 2011-2018 Jose Miguel Esparza
 #
 #    This file is part of peepdf.
 #
@@ -25,201 +25,188 @@
     This module contains some functions to analyse Javascript code inside the PDF file
 '''
 
-import sys, re , os, jsbeautifier
-from PDFUtils import unescapeHTMLEntities
-from cStringIO import StringIO
-from spidermonkey import Runtime
-JS_MODULE = True 
-newLine = os.linesep         
-reJSscript = '<script[^>]*?contentType\s*?=\s*?[\'"]application/x-javascript[\'"][^>]*?>(.*?)</script[^>]*?>'
- 
-def analyseJS(code):
+import peepdf.jsbeautifier as jsbeautifier
+import os
+import re
+import sys
+import traceback
+
+from peepdf.PDFUtils import unescapeHTMLEntities, escapeString
+
+try:
+    import PyV8
+
+    class Global(PyV8.JSClass):
+        evalCode = ''
+
+        def evalOverride(self, expression):
+            self.evalCode += '\n\n// New evaluated code\n' + expression
+            return
+
+    JS_MODULE = True
+except:
+    JS_MODULE = False
+
+    class Global(object):
+        pass
+
+
+errorsFile = os.path.expanduser("~/.peepdf-error.txt")
+newLine = os.linesep
+reJSscript = '<script[^>]*?contentType\s*?=\s*?[\'"]application/x-javascript[\'"][^>]*?>(.*?)</script>'
+preDefinedCode = 'var app = this;'
+
+# Regex that matches any character that's <32 && >127 and not a whitespace.
+bad_chars_re = "|".join(re.escape(chr(ch)) for ch in (
+    [ch for ch in range(32) if chr(ch) not in "\n\r\t\f"] +
+    [ch for ch in range(128, 256)]
+))
+
+def analyseJS(code, context=None, manualAnalysis=False):
     '''
-        Search for obfuscated functions in the Javascript code
-        
+        Hooks the eval function and search for obfuscated elements in the Javascript code
+
         @param code: The Javascript code (string)
-        @return: List with analysis information of the Javascript code: [JSCode,unescapedBytes,urlsFound], where JSCode is a list with the several stages Javascript code, unescapedBytes is a list with the parameters of unescape functions, and urlsFound is a list with the URLs found in the unescaped bytes. 
+        @return: List with analysis information of the Javascript code: [JSCode,unescapedBytes,urlsFound,errors,context], where
+                JSCode is a list with the several stages Javascript code,
+                unescapedBytes is a list with the parameters of unescape functions,
+                urlsFound is a list with the URLs found in the unescaped bytes,
+                errors is a list of errors,
+                context is the context of execution of the Javascript code.
     '''
     errors = []
-    JSCode = []
+    jsCode = []
     unescapedBytes = []
     urlsFound = []
-    oldStdErr = sys.stderr
-    errorFile = StringIO()
-    sys.stderr = errorFile
-    
+
     try:
-        scriptCode = re.findall(reJSscript, code, re.DOTALL | re.IGNORECASE)
-        if scriptCode != []:
-            for c in scriptCode:
-                code = unescapeHTMLEntities(c)
-                code = jsbeautifier.beautify(c)
-                JSCode.append(c)
-            
-        else:
-            code_items = filter(lambda x: re.match('^\s*\d+\s+\d+', x) == None, [ re.sub('^\s*\(','',re.sub('\)[^\)]+$','', a.split('JavaScript')[0])) for a in re.split('/\s*JS', code)[1:]])
-            if code_items != []:
-                for ci in code_items:
-                    ci = ci.replace("\\\\", "\\").replace("\(", "(").replace("\)", ")").replace("\ ", " ").replace("\\r", "\r").replace("\\n", "\n")
-                    ci = unescapeHTMLEntities(ci)
-                    ci = jsbeautifier.beautify(ci)
-                    
-                    JSCode.append(ci)
-            else:
-                code = unescapeHTMLEntities(code)
-                code = jsbeautifier.beautify(code)
-                JSCode.append(code)
-    
-        for code in JSCode:
-            if code != None and JS_MODULE:
-                r = Runtime()
-                context = r.new_context()
-                while True:
-                    evalFunctionsData = searchObfuscatedFunctions(code, 'eval')
-                    originalElement = code
-                    for evalFunctionData in evalFunctionsData:
-                        if not evalFunctionData[2]:
-                            modifiedCode = evalFunctionData[1][0].replace(evalFunctionData[0],'return')
-                            code = originalElement.replace(evalFunctionData[1][0],modifiedCode)
-                        else:
-                            code = originalElement.replace(evalFunctionData[1][0],evalFunctionData[1][1]+';')
-                        try:
-                            executedJS = context.eval_script(code)
-                            if executedJS == None:
-                                raise Exception
-                            break
-                        except:                   
-                            if evalFunctionData[2]:
-                                modifiedCode = evalFunctionData[1][0].replace(evalFunctionData[0],'return')
-                                code = originalElement.replace(evalFunctionData[1][0],modifiedCode)
-                            else:
-                                code = originalElement.replace(evalFunctionData[1][0],evalFunctionData[1][1]+';')
-                            try:
-                                executedJS = context.eval_script(code)
-                                if executedJS == None:
-                                    raise Exception
-                            except:
-                                code = originalElement
-                                continue
+        code = unescapeHTMLEntities(code)
+        scriptElements = re.findall(reJSscript, code, re.DOTALL | re.IGNORECASE)
+        if scriptElements:
+            code = ''
+            for scriptElement in scriptElements:
+                code += scriptElement + '\n\n'
+        code = jsbeautifier.beautify(code)
+        jsCode.append(code)
+
+        if code is not None and JS_MODULE and not manualAnalysis:
+            if context is None:
+                context = PyV8.JSContext(Global())
+            context.enter()
+            # Hooking the eval function
+            context.eval('eval=evalOverride')
+            # context.eval(preDefinedCode)
+            while True:
+                try:
+                    context.eval(code)
+                    evalCode = context.eval('evalCode')
+                    evalCode = jsbeautifier.beautify(evalCode)
+                    if evalCode != '' and evalCode != code:
+                        code = evalCode
+                        jsCode.append(code)
                     else:
                         break
-                    if executedJS != originalElement and executedJS != None and executedJS != '':
-                        code = executedJS
-                        JSCode.append(code)                
-                    else:                                            
-                        break
-                
-                if code != None:
-                    escapedVars = re.findall('(\w*?)\s*?=\s*?(unescape\((.*?)\))', code, re.DOTALL)
-                    for var in escapedVars:
-                        bytes = var[2]
-                        if bytes.find('+') != -1:
-                            varContent = getVarContent(code, bytes)
-                            if len(varContent) > 150:
-                                ret = unescape(varContent)
-                                if ret[0] != -1:
-                                    bytes = ret[1]
-                                    urls = re.findall('https?://.*$', bytes, re.DOTALL)
-                                    if bytes not in unescapedBytes:
-                                        unescapedBytes.append(bytes)
-                                    for url in urls:
-                                        if url not in urlsFound:
-                                            urlsFound.append(url)
-                        else:
-                            bytes = bytes[1:-1]
-                            if len(bytes) > 150:
-                                ret = unescape(bytes)
-                                if ret[0] != -1:
-                                    bytes = ret[1]
-                                    urls = re.findall('https?://.*$', bytes, re.DOTALL)
-                                    if bytes not in unescapedBytes:
-                                        unescapedBytes.append(bytes)
-                                    for url in urls:
-                                        if url not in urlsFound:
-                                            urlsFound.append(url)
-    except Exception as e:
-        errors.append('Unknown error!! [%s]' % e)
+                except:
+                    error = str(sys.exc_info()[1])
+                    f = open(os.path.expanduser("~/.peepdf-jserror.log"), "ab")
+                    f.write(error + newLine)
+                    errors.append(error)
+                    break
+
+            if code != '':
+                escapedVars = re.findall('(\w*?)\s*?=\s*?(unescape\((.*?)\))', code, re.DOTALL)
+                for var in escapedVars:
+                    bytes = var[2]
+                    if bytes.find('+') != -1 or bytes.find('%') == -1:
+                        varContent = getVarContent(code, bytes)
+                        if len(varContent) > 150:
+                            ret = unescape(varContent)
+                            if ret[0] != -1:
+                                bytes = ret[1]
+                                urls = re.findall('https?://.*$', bytes, re.DOTALL)
+                                if bytes not in unescapedBytes:
+                                    unescapedBytes.append(bytes)
+                                for url in urls:
+                                    if url not in urlsFound:
+                                        urlsFound.append(url)
+                    else:
+                        bytes = bytes[1:-1]
+                        if len(bytes) > 150:
+                            ret = unescape(bytes)
+                            if ret[0] != -1:
+                                bytes = ret[1]
+                                urls = re.findall('https?://.*$', bytes, re.DOTALL)
+                                if bytes not in unescapedBytes:
+                                    unescapedBytes.append(bytes)
+                                for url in urls:
+                                    if url not in urlsFound:
+                                        urlsFound.append(url)
+    except:
+        traceback.print_exc(file=open(errorsFile, 'a'))
+        errors.append('Unexpected error in the JSAnalysis module!!')
     finally:
-        sys.stderr = oldStdErr
-        errorFileContent = errorFile.getvalue()
-        if errorFileContent != '' and errorFileContent.find('JavaScript error') != -1:
-            lines = errorFileContent.split(newLine)
-            for line in lines:
-                if line.find('JavaScript error') != -1 and line not in errors:
-                    errors.append(line)
-        for js in JSCode:
-            if js == None or js == '':
-                JSCode.remove(js)
-    return [JSCode,unescapedBytes,urlsFound,errors]
-       
+        for js in jsCode:
+            if js is None or js == '':
+                jsCode.remove(js)
+    return [jsCode, unescapedBytes, urlsFound, errors, context]
+
+
 def getVarContent(jsCode, varContent):
     '''
         Given the Javascript code and the content of a variable this method tries to obtain the real value of the variable, cleaning expressions like "a = eval; a(js_code);"
-        
+
         @param jsCode: The Javascript code (string)
         @param varContent: The content of the variable (string)
         @return: A string with real value of the variable
     '''
     clearBytes = ''
-    varContent = varContent.replace('\n','')
-    varContent = varContent.replace('\r','')
-    varContent = varContent.replace('\t','')
-    varContent = varContent.replace(' ','')
+    varContent = varContent.replace('\n', '')
+    varContent = varContent.replace('\r', '')
+    varContent = varContent.replace('\t', '')
+    varContent = varContent.replace(' ', '')
     parts = varContent.split('+')
     for part in parts:
         if re.match('["\'].*?["\']', part, re.DOTALL):
             clearBytes += part[1:-1]
         else:
+            part = escapeString(part)
             varContent = re.findall(part + '\s*?=\s*?(.*?)[,;]', jsCode, re.DOTALL)
-            if varContent != []:
+            if varContent:
                 clearBytes += getVarContent(jsCode, varContent[0])
     return clearBytes
 
-def isPostscript(content):
-    try:
-        for l in content[:0x100].splitlines():
-            items = l.split(" ")
-            _ = float(items[0])
-            _ = float(items[1])
-            return True
-    except:
-        pass
-
-    return False
 
 def isJavascript(content):
     '''
-        Given an string this method looks for typical Javascript strings and try to identify if the string contains Javascript code or not.
-        
+        Given an string this method looks for typical Javscript strings and try to identify if the string contains Javascrit code or not.
+
         @param content: A string
         @return: A boolean, True if it seems to contain Javascript code or False in the other case
     '''
-    JSStrings_depends = {"return": ["function "], "else": ["if (", "if("]}
-    high_value_kw = ['var ','function ','if (','else','return','while (','for (','for(','while(']
-    low_value_kw = [';',')','(','=','{','}','if(']
-    keyStrings = [';','(',')']
+    jsStrings = [
+        'var ', ';', ')', '(', 'function ', '=', '{', '}', 'if ',
+        'else', 'return', 'while ', 'for ', ',', 'eval',
+    ]
+    keyStrings = [';', '(', ')']
     stringsFound = []
     limit = 15
-    minDistinctStringsFound = 5
+    minDistinctStringsFound = 4
+    minRatio = 10
     results = 0
-    
-    ## Skip buffers with non readable chars
-    for char in content:
-        if (ord(char) < 32 and char not in ['\n','\r','\t','\f','\x00']) or ord(char) >= 127:
-            return False
-    
-    ## Skip PostScript files
-    if isPostscript(content):
-        if "/JS" in content and "JavaScript" in content:
-            return True
-        else:
-            return False
-    
-    ## Check for javascript block
-    if re.findall(reJSscript, content, re.DOTALL | re.IGNORECASE) != []:
+    length = len(content)
+    smallScriptLength = 100
+
+    if content.startswith("/GS1 gs"):
+        return False
+
+    if re.findall(reJSscript, content, re.DOTALL | re.IGNORECASE):
         return True
-    
-    for string in high_value_kw + low_value_kw:
+
+    _, count = re.subn(bad_chars_re, "", content, len(content) // 10)
+    if int(count) == len(content) // 10:
+        return False
+
+    for string in jsStrings:
         cont = content.count(string)
         results += cont
         if cont > 0 and string not in stringsFound:
@@ -227,82 +214,71 @@ def isJavascript(content):
         elif cont == 0 and string in keyStrings:
             return False
 
-    if results > limit and len(stringsFound) >= minDistinctStringsFound:
-        if len(stringsFound) <= 8:
-            has_high_value_kw = False
-            for s in stringsFound:
-                if s in high_value_kw:
-                    try: 
-                        dep = JSStrings_depends[s]
-                        for d in dep:
-                            if d in stringsFound:
-                                has_high_value_kw = True
-                                break   
-                    except:
-                        has_high_value_kw = True
-                        
-                    if has_high_value_kw:
-                        break
-                    
-            if not has_high_value_kw and len(content) > 100:
-                return False
-            
+    numDistinctStringsFound = len(stringsFound)
+    ratio = (results*100.0)/length
+    if (results > limit and numDistinctStringsFound >= minDistinctStringsFound) or \
+            (length < smallScriptLength and ratio > minRatio):
         return True
     else:
         return False
-    
+
+
 def searchObfuscatedFunctions(jsCode, function):
     '''
         Search for obfuscated functions in the Javascript code
-        
+
         @param jsCode: The Javascript code (string)
         @param function: The function name to look for (string)
-        @return: List with obfuscated functions information [functionName,functionCall,containsReturns] 
+        @return: List with obfuscated functions information [functionName,functionCall,containsReturns]
     '''
     obfuscatedFunctionsInfo = []
-    if jsCode != None:
+    if jsCode is not None:
         match = re.findall('\W('+function+'\s{0,5}?\((.*?)\)\s{0,5}?;)', jsCode, re.DOTALL)
-        if match != []:
+        if match:
             for m in match:
-                if re.findall('return',m[1],re.IGNORECASE) != []:
-                    obfuscatedFunctionsInfo.append([function,m,True])
+                if re.findall('return', m[1], re.IGNORECASE):
+                    obfuscatedFunctionsInfo.append([function, m, True])
                 else:
-                    obfuscatedFunctionsInfo.append([function,m,False])
+                    obfuscatedFunctionsInfo.append([function, m, False])
         obfuscatedFunctions = re.findall('\s*?((\w*?)\s*?=\s*?'+function+')\s*?;', jsCode, re.DOTALL)
         for obfuscatedFunction in obfuscatedFunctions:
             obfuscatedElement = obfuscatedFunction[1]
             obfuscatedFunctionsInfo += searchObfuscatedFunctions(jsCode, obfuscatedElement)
     return obfuscatedFunctionsInfo
 
-def unescape(escapedBytes, unicode = True):
+
+def unescape(escapedBytes, str=True):
     '''
         This method unescapes the given string
-        
+
         @param escapedBytes: A string to unescape
         @return: A tuple (status,statusContent), where statusContent is an unescaped string in case status = 0 or an error in case status = -1
     '''
-    #TODO: modify to accept a list of escaped strings?
+    # TODO: modify to accept a list of escaped strings?
     unescapedBytes = ''
-    if unicode:
+    if str:
         unicodePadding = '\x00'
     else:
         unicodePadding = ''
     try:
-        if escapedBytes.find('%u') != -1 or escapedBytes.find('%U') != -1 or escapedBytes.find('%') != -1:
-            splitBytes = escapedBytes.split('%')
+        if escapedBytes.lower().find('%u') != -1 or escapedBytes.lower().find('\\u') != -1 or escapedBytes.find('%') != -1:
+            if escapedBytes.lower().find('\\u') != -1:
+                splitBytes = escapedBytes.split('\\')
+            else:
+                splitBytes = escapedBytes.split('%')
             for i in range(len(splitBytes)):
                 splitByte = splitBytes[i]
                 if splitByte == '':
                     continue
-                if len(splitByte) > 4 and re.match('u[0-9a-f]{4}',splitByte[:5],re.IGNORECASE):
-                    unescapedBytes += chr(int(splitByte[3]+splitByte[4],16))+chr(int(splitByte[1]+splitByte[2],16))
+                if len(splitByte) > 4 and re.match('u[0-9a-f]{4}', splitByte[:5], re.IGNORECASE):
+                    unescapedBytes += chr(int(splitByte[3]+splitByte[4], 16))+chr(int(splitByte[1]+splitByte[2], 16))
                     if len(splitByte) > 5:
-                        for j in range(5,len(splitByte)): 
+                        for j in range(5, len(splitByte)):
                             unescapedBytes += splitByte[j] + unicodePadding
-                elif len(splitByte) > 1 and re.match('[0-9a-f]{2}',splitByte[:2],re.IGNORECASE):
-                    unescapedBytes += chr(int(splitByte[0]+splitByte[1],16)) + unicodePadding
+                elif len(splitByte) > 1 and re.match('[0-9a-f]{2}', splitByte[:2], re.IGNORECASE):
+                    unescapedBytes += chr(int(splitByte[0]+splitByte[1], 16)) + unicodePadding
                     if len(splitByte) > 2:
-                        for j in range(2,len(splitByte)): 
+                        for j in range(2, len(splitByte)):
                             unescapedBytes += splitByte[j] + unicodePadding
                 else:
                     if i != 0:
@@ -312,5 +288,5 @@ def unescape(escapedBytes, unicode = True):
         else:
             unescapedBytes = escapedBytes
     except:
-        return (-1,'Error while unescaping the bytes')
-    return (0,unescapedBytes)
+        return (-1, 'Error while unescaping the bytes')
+    return (0, unescapedBytes)

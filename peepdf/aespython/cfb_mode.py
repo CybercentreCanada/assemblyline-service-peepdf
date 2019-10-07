@@ -36,9 +36,9 @@ import unittest
 class TestEncryptionMode(unittest.TestCase):
     def test_mode(self):
         #Self test
-        import key_expander
-        import aes_cipher
-        import test_keys
+        import peepdf.aespython.key_expander as key_expander
+        import peepdf.aespython.aes_cipher as aes_cipher
+        import peepdf.aespython.test_keys as test_keys
 
         test_data = test_keys.TestKeys()
 
