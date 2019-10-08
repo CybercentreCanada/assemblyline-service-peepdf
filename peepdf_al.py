@@ -551,10 +551,10 @@ class PeePDF(ServiceBase):
                         else:
                             pass
 
-                res.parent = file_res
+                file_res.add_section(res)
 
                 for results in res_list:
-                    results.parent = file_res
+                    file_res.add_section(results)
 
                 if js_dump:
                     js_dump_res = ResultSection('Full Javascript dump')
@@ -584,7 +584,7 @@ class PeePDF(ServiceBase):
 
             else:
                 res = ResultSection("ERROR: Could not parse file with peepdf.")
-                res.parent = file_res
+                file_res.add_section(res)
         finally:
             try:
                 del pdf_file
