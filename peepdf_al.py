@@ -82,7 +82,6 @@ class PeePDF(ServiceBase):
 
     def execute(self, request):
         self.import_service_deps()
-        request.result = Result()
         temp_filename = request.file_path
 
         # Filter out large documents
@@ -199,7 +198,7 @@ class PeePDF(ServiceBase):
 
     # noinspection PyBroadException,PyUnboundLocalVariable
     def peepdf_analysis(self, temp_filename, file_content, request):
-        file_res = request.result
+        file_res = Result()
         try:
             res_list = []
             js_stream = []
@@ -289,11 +288,11 @@ class PeePDF(ServiceBase):
                         if events is not None:
                             for event in events:
                                 res_suspicious.add_line(event + ': ' + self.list_first_x(events[event]))
-                                res_suspicious.set_heuristic(1, "AL_PEEPDF_8")
+                                res_suspicious.set_heuristic(8, "AL_PEEPDF_8")
                         if actions is not None:
                             for action in actions:
                                 res_suspicious.add_line(action + ': ' + self.list_first_x(actions[action]))
-                                res_suspicious.set_heuristic(1, "AL_PEEPDF_8")
+                                res_suspicious.set_heuristic(8, "AL_PEEPDF_8")
                         if vulns is not None:
                             for vuln in vulns:
                                 if vuln in vulnsDict:
@@ -304,11 +303,11 @@ class PeePDF(ServiceBase):
                                         temp.append(vulnCVE)
                                         cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE)
                                         if cve_found:
-                                            file_res.add_tag('EXPLOIT_NAME',
+                                            res_suspicious.add_tag('EXPLOIT_NAME',
                                                              vulnCVE[cve_found.start():cve_found.end()],
                                                              50,
                                                              usage='IDENTIFICATION')
-                                            file_res.add_tag('FILE_SUMMARY',
+                                            res_suspicious.add_tag('FILE_SUMMARY',
                                                              vulnCVE[cve_found.start():cve_found.end()],
                                                              50,
                                                              usage='IDENTIFICATION')
@@ -317,7 +316,7 @@ class PeePDF(ServiceBase):
                                     res_suspicious.add_line(temp)
                                 else:
                                     res_suspicious.add_line(vuln + ': ' + str(vulns[vuln]))
-                                res_suspicious.set_heuristic(1, "AL_PEEPDF_8")
+                                res_suspicious.set_heuristic(8, "AL_PEEPDF_8")
                         if elements is not None:
                             for element in elements:
                                 if element in vulnsDict:
@@ -328,21 +327,21 @@ class PeePDF(ServiceBase):
                                         temp.append(vulnCVE)
                                         cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE)
                                         if cve_found:
-                                            file_res.add_tag('EXPLOIT_NAME',
+                                            res_suspicious.add_tag('EXPLOIT_NAME',
                                                              vulnCVE[cve_found.start():cve_found.end()],
                                                              50,
                                                              usage='IDENTIFICATION')
-                                            file_res.add_tag('FILE_SUMMARY',
+                                            res_suspicious.add_tag('FILE_SUMMARY',
                                                              vulnCVE[cve_found.start():cve_found.end()],
                                                              50,
                                                              usage='IDENTIFICATION')
                                     temp.append('): ')
                                     temp.append(str(elements[element]))
                                     res_suspicious.add_line(temp)
-                                    res_suspicious.set_heuristic(1, "AL_PEEPDF_8")
+                                    res_suspicious.set_heuristic(8, "AL_PEEPDF_8")
                                 else:
                                     res_suspicious.add_line('\t\t' + element + ': ' + str(elements[element]))
-                                    res_suspicious.set_heuristic(1, "AL_PEEPDF_8")
+                                    res_suspicious.set_heuristic(8, "AL_PEEPDF_8")
 
                     urls = stats_version['URLs']
                     if urls is not None:
@@ -350,7 +349,7 @@ class PeePDF(ServiceBase):
                         res_url = ResultSection('Found URLs', parent=res)
                         for url in urls:
                             res_url.add_line('\t\t' + url)
-                            res_url.set_heuristic(1, "AL_PEEPDF_9")
+                            res_url.set_heuristic(9, "AL_PEEPDF_9")
 
                     for obj in stats_version['Objects'][1]:
                         cur_obj = pdf_file.getObject(obj, version)
@@ -385,9 +384,9 @@ class PeePDF(ServiceBase):
                                 if has_eval or has_unescape or len(big_buffs) > 0:
                                     score_modifier += js_score
                                     js_cmt = "Suspiciously malicious "
-                                    file_res.add_tag('FILE_SUMMARY', "Suspicious javascript in PDF",
+                                    cur_res.add_tag('FILE_SUMMARY', "Suspicious javascript in PDF",
                                                      50, usage='IDENTIFICATION')
-                                    sub_res.set_heuristic(1, "AL_PEEPDF_7")
+                                    sub_res.set_heuristic(7, "AL_PEEPDF_7")
                                 js_res = ResultSection(0, f"{js_cmt}Javascript Code (block: {js_idx})",
                                                        parent=sub_res)
 
@@ -408,13 +407,13 @@ class PeePDF(ServiceBase):
                                             analysis_res.add_line("eval: This javascript block uses eval() function"
                                                                   " which is often used to launch deobfuscated"
                                                                   " javascript code.")
-                                            analysis_res.set_heuristic(1, "AL_PEEPDF_3")
+                                            analysis_res.set_heuristic(3, "AL_PEEPDF_3")
                                         if has_unescape:
                                             analysis_res.add_line("unescape: This javascript block uses unescape() "
                                                                   "function. It may be legitimate but it is definitely"
                                                                   " suspicious since malware often use this to "
                                                                   "deobfuscate code blocks.")
-                                            analysis_res.set_heuristic(1, "AL_PEEPDF_3")
+                                            analysis_res.set_heuristic(3, "AL_PEEPDF_3")
 
                                     buff_idx = 0
                                     for buff in big_buffs:
@@ -447,7 +446,7 @@ class PeePDF(ServiceBase):
                                                           f"block{buff_cond}. Here are the first 256 bytes.",
                                                           parent=js_res, body=hexdump(buff[:256]),
                                                           body_format=BODY_FORMAT.MEMORY_DUMP)
-                                            buff_res.set_heuristic(1, "AL_PEEPDF_2")
+                                            buff_res.set_heuristic(2, "AL_PEEPDF_2")
 
                                 processed_sc = []
                                 sc_idx = 0
@@ -476,10 +475,10 @@ class PeePDF(ServiceBase):
                                         f.close()
                                         f_list.append(temp_path)
 
-                                        file_res.add_tag('FILE_SUMMARY', "Unescaped Javascript Buffer",
+                                        cur_res.add_tag('FILE_SUMMARY', "Unescaped Javascript Buffer",
                                                          50,
                                                          usage='IDENTIFICATION')
-                                        shell_res.set_heuristic(1, "AL_PEEPDF_6")
+                                        shell_res.set_heuristic(6, "AL_PEEPDF_6")
                                         score_modifier += shell_score
 
                             if score_modifier > 0:
@@ -575,7 +574,7 @@ class PeePDF(ServiceBase):
                     js_dump_res.add_line(["The javascript dump was saved as ", temp_js_dump])
                     js_dump_res.add_line(["The sha1 for the javascript dump is ", temp_js_dump_sha1])
 
-                    file_res.add_tag('PDF_JAVASCRIPT_SHA1', temp_js_dump_sha1, 100,
+                    js_dump_res.add_tag('PDF_JAVASCRIPT_SHA1', temp_js_dump_sha1, 100,
                                      usage='CORRELATION')
                     file_res.add_section(js_dump_res)
 
@@ -586,6 +585,7 @@ class PeePDF(ServiceBase):
                 res = ResultSection("ERROR: Could not parse file with peepdf.")
                 file_res.add_section(res)
         finally:
+            request.result = file_res
             try:
                 del pdf_file
             except:
