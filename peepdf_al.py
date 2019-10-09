@@ -86,8 +86,12 @@ class PeePDF(ServiceBase):
 
         # Filter out large documents
         if os.path.getsize(temp_filename) > self.max_pdf_size:
-            request.result.add_section(ResultSection(f"PDF Analysis of the file was skipped because the "
+            file_res = Result()
+            res = (ResultSection(f"PDF Analysis of the file was skipped because the "
                                                 f"file is too big (limit is {(self.max_pdf_size / 1000 / 1000)} MB)."))
+
+            file_res.add_section(res)
+            request.result = file_res
             return
 
         filename = os.path.basename(temp_filename)
