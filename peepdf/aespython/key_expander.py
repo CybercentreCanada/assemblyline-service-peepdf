@@ -16,7 +16,7 @@ __author__ = "Adam Newman"
 
 #Normally use relative import. In test mode use local import.
 try:from .aes_tables import sbox,rcon
-except ValueError:from aes_tables import sbox,rcon
+except ValueError:from peepdf.aespython.aes_tables import sbox,rcon
 from operator import xor
 class KeyExpander:
     """Perform AES Key Expansion"""
@@ -84,7 +84,7 @@ import unittest
 class TestKeyExpander(unittest.TestCase):
     def test_keys(self):
         """Test All Key Expansions"""
-        import test_keys
+        import peepdf.aespython.test_keys as test_keys
         test_data = test_keys.TestKeys()
         for key_size in 128, 192, 256:
             test_expander = KeyExpander(key_size)

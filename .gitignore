@@ -4,6 +4,7 @@
 .idea
 dist
 *.egg-info
+venv
 
 ehthumbs.db
 Thumbs.db

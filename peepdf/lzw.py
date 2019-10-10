@@ -3,7 +3,7 @@
 #    http://peepdf.eternal-todo.com
 #    By Jose Miguel Esparza <jesparza AT eternal-todo.com>
 #
-#    Copyright (C) 2012 Jose Miguel Esparza
+#    Copyright (C) 2012-2014 Jose Miguel Esparza
 #
 #    This file is part of peepdf.
 #
@@ -66,7 +66,7 @@ The Details
     code points are stored with their MSB in the most significant bit
     available in the output character.
 
->>> import lzw
+>>> import peepdf.lzw
 >>>
 >>> mybytes = lzw.readbytes("README.txt")
 >>> lessbytes = lzw.compress(mybytes)
@@ -128,7 +128,7 @@ class ByteEncoder(object):
     with a L{BitPacker}.
 
 
-    >>> import lzw
+    >>> import peepdf.lzw as lzw
     >>>
     >>> enc = lzw.ByteEncoder(12)
     >>> bigstr = b"gabba gabba yo gabba gabba gabba yo gabba gabba gabba yo gabba gabba gabba yo"
@@ -188,10 +188,10 @@ class ByteDecoder(object):
        iterator over the uncompressed bytes. Dual of
        L{ByteEncoder.encodetobytes}. See L{ByteEncoder} for an
        example of use.
-       """        
+       """
        codepoints = self._unpacker.unpack(bytesource)
        clearbytes = self._decoder.decode(codepoints)
-       
+
        return clearbytes
 
 
@@ -236,7 +236,7 @@ class BitPacker(object):
         and bytes following END_OF_INFO_CODE will be aligned to the
         next byte boundary.
 
-        >>> import lzw
+        >>> import peepdf.lzw as lzw
         >>> pkr = lzw.BitPacker(258)
         >>> [ b for b in pkr.pack([ 1, 257]) ] == [ chr(0), chr(0xC0), chr(0x40) ]
         True
@@ -262,7 +262,7 @@ class BitPacker(object):
             if pt == END_OF_INFO_CODE:
                while len(tailbits) % 8:
                   tailbits.append(0)
-                  
+
             if pt in [ CLEAR_CODE, END_OF_INFO_CODE ]:
                 nextwidth = minwidth
                 codesize = self._initial_code_size
@@ -277,13 +277,13 @@ class BitPacker(object):
 
                 tailbits = tailbits[8:]
 
-                       
+
         if tailbits:
             tail = bitstobytes(tailbits)
             for bt in tail:
                 yield struct.pack("B", bt)
 
-                
+
 
 
 class BitUnpacker(object):
@@ -317,7 +317,7 @@ class BitUnpacker(object):
         stop the generator, just reset the alignment and the width
 
 
-        >>> import lzw
+        >>> import peepdf.lzw as lzw
         >>> unpk = lzw.BitUnpacker(initial_code_size=258)
         >>> [ i for i in unpk.unpack([ chr(0), chr(0xC0), chr(0x40) ]) ]
         [1, 257]
@@ -325,7 +325,7 @@ class BitUnpacker(object):
         bits = []
         offset = 0
         ignore = 0
-        
+
         codesize = self._initial_code_size
         minwidth = 8
         while (1 << minwidth) < codesize:
@@ -403,7 +403,7 @@ class Decoder(object):
         be handled by the upstream codepoint generator (see
         L{BitUnpacker}, for example)
 
-        >>> import lzw
+        >>> import peepdf.lzw as lzw
         >>> dec = lzw.Decoder()
         >>> ''.join(dec.decode([103, 97, 98, 98, 97, 32, 258, 260, 262, 121, 111, 263, 259, 261, 256]))
         'gabba gabba yo gabba'
@@ -424,7 +424,7 @@ class Decoder(object):
         code. EOI codes should be handled by callers if they're
         present in our source stream.
 
-        >>> import lzw
+        >>> import peepdf.lzw as lzw
         >>> dec = lzw.Decoder()
         >>> beforesize = dec.code_size()
         >>> dec._decode_codepoint(0x80)
@@ -484,7 +484,7 @@ class Encoder(object):
 
         self._max_code_size = max_code_size
         self._buffer = ''
-        self._clear_codes()            
+        self._clear_codes()
 
         if max_code_size < self.code_size():
             raise ValueError("Max code size too small, (must be at least {0})".format(self.code_size()))
@@ -509,12 +509,12 @@ class Encoder(object):
 
         if self._buffer:
             yield self._prefixes[ self._buffer ]
-            self._buffer = ''            
+            self._buffer = ''
 
         yield CLEAR_CODE
         self._clear_codes()
 
-            
+
 
 
     def encode(self, bytesource):
@@ -523,11 +523,11 @@ class Encoder(object):
         corresponding stream of codepoints.
         Will clear the codes at the end of the stream.
 
-        >>> import lzw
+        >>> import peepdf.lzw as lzw
         >>> enc = lzw.Encoder()
         >>> [ cp for cp in enc.encode("gabba gabba yo gabba") ]
         [103, 97, 98, 98, 97, 32, 258, 260, 262, 121, 111, 263, 259, 261, 256]
-        
+
         Modified by Jose Miguel Esparza to add support for PDF files encoding
         """
         yield CLEAR_CODE
@@ -551,7 +551,7 @@ class Encoder(object):
         # want to call this.
 
         new_prefix = self._buffer
-        
+
         if new_prefix + byte in self._prefixes:
             new_prefix = new_prefix + byte
         elif new_prefix:
@@ -560,7 +560,7 @@ class Encoder(object):
             new_prefix = byte
 
             yield encoded
-        
+
         self._buffer = new_prefix
 
 
@@ -602,9 +602,9 @@ class PagingEncoder(object):
 
         The dual of PagingDecoder.decodepages
 
-        >>> import lzw
+        >>> import peepdf.lzw
         >>> enc = lzw.PagingEncoder(257, 2**12)
-        >>> coded = enc.encodepages([ "say hammer yo hammer mc hammer go hammer", 
+        >>> coded = enc.encodepages([ "say hammer yo hammer mc hammer go hammer",
         ...                           "and the rest can go and play",
         ...                           "can't touch this" ])
         ...
@@ -622,11 +622,11 @@ class PagingEncoder(object):
             packer = BitPacker(initial_code_size=encoder.code_size())
             packed = packer.pack(codes_and_eoi)
 
-            for byte in packed: 
+            for byte in packed:
                 yield byte
 
 
-            
+
 
 class PagingDecoder(object):
     """
@@ -646,7 +646,7 @@ class PagingDecoder(object):
 
         try:
             while 1:
-                cp = codepoints.next()
+                cp = next(codepoints)
                 if cp != END_OF_INFO_CODE:
                     yield cp
                 else:
@@ -655,7 +655,7 @@ class PagingDecoder(object):
 
         except StopIteration:
             pass
-        
+
 
     def decodepages(self, bytesource):
         """
@@ -667,7 +667,7 @@ class PagingDecoder(object):
 
         BUG: Dangling trailing page on decompression.
 
-        >>> import lzw
+        >>> import peepdf.lzw as lzw
         >>> pgdec = lzw.PagingDecoder(initial_code_size=257)
         >>> pgdecoded = pgdec.decodepages(
         ...     ''.join([ '\\x80\\x1c\\xcc\\'\\x91\\x01\\xa0\\xc2m6',
@@ -734,7 +734,7 @@ def filebytes(fileobj, buffersize=1024):
         for byte in buff: yield byte
         buff = fileobj.read(buffersize)
 
-    
+
 def readbytes(filename, buffersize=1024):
     """
     Opens a file named by filename and iterates over the L{filebytes}
@@ -765,7 +765,7 @@ def inttobits(anint, width=None):
     MSBs to the given width (but will NOT truncate overflowing
     results)
 
-    >>> import lzw
+    >>> import peepdf.lzw as lzw
     >>> lzw.inttobits(304, width=16)
     [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0]
 
@@ -791,15 +791,15 @@ def intfrombits(bits):
     Given a list of boolean values, interprets them as a binary
     encoded, MSB-first unsigned integer (with True == 1 and False
     == 0) and returns the result.
-    
-    >>> import lzw
+
+    >>> import peepdf.lzw as lzw
     >>> lzw.intfrombits([ 1, 0, 0, 1, 1, 0, 0, 0, 0 ])
     304
     """
     ret = 0
     lsb_first = [ b for b in bits ]
     lsb_first.reverse()
-    
+
     for bit_index in range(len(lsb_first)):
         if lsb_first[ bit_index ]:
             ret = ret | (1 << bit_index)
@@ -811,8 +811,8 @@ def bytestobits(bytesource):
     """
     Breaks a given iterable of bytes into an iterable of boolean
     values representing those bytes as unsigned integers.
-    
-    >>> import lzw
+
+    >>> import peepdf.lzw as lzw
     >>> [ x for x in lzw.bytestobits(b"\\x01\\x30") ]
     [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0]
     """
@@ -836,7 +836,7 @@ def bitstobytes(bits):
 
     Does *NOT* pack the returned values into a bytearray or the like.
 
-    >>> import lzw
+    >>> import peepdf.lzw as lzw
     >>> bitstobytes([0, 0, 0, 0, 0, 0, 0, 0, "Yes, I'm True"]) == [ 0x00, 0x80 ]
     True
     >>> bitstobytes([0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0]) == [ 0x01, 0x30 ]
@@ -858,7 +858,7 @@ def bitstobytes(bits):
 
     if nextbit < 7: ret.append(nextbyte)
     return ret
-        
+
 
 
 
@@ -871,15 +871,12 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 '''
 
 import sys
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from StringIO import StringIO
 
+from io import StringIO
 
 ##  LZWDecoder
 ##
@@ -923,7 +920,7 @@ class LZWDecoder(object):
     def feed(self, code):
         x = ''
         if code == 256:
-            self.table = [ chr(c) for c in xrange(256) ] # 0-255
+            self.table = [ chr(c) for c in range(256) ] # 0-255
             self.table.append(None) # 256
             self.table.append(None) # 257
             self.prevbuf = ''
@@ -958,8 +955,8 @@ class LZWDecoder(object):
             x = self.feed(code)
             yield x
             if self.debug:
-                print >>sys.stderr, ('nbits=%d, code=%d, output=%r, table=%r' %
-                                     (self.nbits, code, x, self.table[258:]))
+                x = f"nbits={self.nbits}, code={code}, output={x}, table={self.table[258:]}"
+                sys.stderr.write(x)
         return
 
 

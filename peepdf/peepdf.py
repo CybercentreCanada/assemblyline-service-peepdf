@@ -29,14 +29,14 @@
 
 import sys, os, optparse, re, urllib2, datetime, hashlib, traceback
 from datetime import datetime
-from PDFCore import PDFParser,vulnsDict
+from peepdf.PDFCore import PDFParser,vulnsDict
  
 import pylibemu
 
 EMU_MODULE = True
 
 try:
-	from colorama import init, Fore, Back, Style
+	from peepdf.colorama import init, Fore, Back, Style
 	init()
 	COLORIZED_OUTPUT = True
 	warningColor = Fore.YELLOW
@@ -72,13 +72,13 @@ def getRepPaths(url, path = ''):
 
 def getLocalFilesInfo(filesList):
 	localFilesInfo = {}
-	print '[-] Getting local files information...'
+	print('[-] Getting local files information...')
 	for path in filesList:
 		if os.path.exists(path):
 			content = open(path,'rb').read()
 			shaHash = hashlib.sha256(content).hexdigest()
 			localFilesInfo[path] = shaHash
-	print '[+] Done'
+	print('[+] Done')
 	return localFilesInfo
 
 def getPeepXML(statsDict, version, revision):
@@ -255,14 +255,14 @@ argsParser.add_option('-x', '--xml', action='store_true', dest='xmlOutput', defa
 
 try:
 	if options.version:
-		print peepdfHeader
+		print(peepdfHeader)
 	elif options.update:
 		updated = False
 		newVersion = ''
 		localVersion = 'v'+version+' r'+revision
 		reVersion = 'version = \'(\d\.\d)\'\s*?revision = \'(\d+)\''
 		repURL = 'http://peepdf.googlecode.com/svn/trunk/'
-		print '[-] Checking if there are new updates...'
+		print('[-] Checking if there are new updates...')
 		try:
 			remotePeepContent = urllib2.urlopen(repURL+'peepdf.py').read()
 		except:
@@ -273,14 +273,14 @@ try:
 		else:
 			sys.exit('[x] Error getting the version number from the repository')
 		if localVersion == newVersion:
-			print '[+] No changes! ;)'
+			print('[+] No changes! ;)')
 		else:
-			print '[+] There are new updates!!'
-			print '[-] Getting paths from the repository...'
+			print('[+] There are new updates!!')
+			print('[-] Getting paths from the repository...')
 			pathNames = getRepPaths(repURL,'')
-			print '[+] Done'
+			print('[+] Done')
 			localFilesInfo = getLocalFilesInfo(pathNames)
-			print '[-] Checking files...'
+			print('[-] Checking files...')
 			for path in pathNames:
 				try:
 					fileContent = urllib2.urlopen(repURL+path).read()
@@ -292,21 +292,21 @@ try:
 					shaHash = hashlib.sha256(fileContent).hexdigest()
 					if shaHash != localFilesInfo[path]:
 						open(path,'wb').write(fileContent)
-						print '[+] File "'+path+'" updated successfully'
+						print('[+] File "'+path+'" updated successfully')
 				else:
 					# File does not exist
 					index = path.rfind('/')
 					if index != -1:
 						dirsPath = path[:index]
 						if not os.path.exists(dirsPath):
-							print '[+] New directory "'+dirsPath+'" created successfully'
+							print('[+] New directory "'+dirsPath+'" created successfully')
 							os.makedirs(dirsPath)
 					open(path,'wb').write(fileContent)
-					print '[+] New file "'+path+'" created successfully'
+					print('[+] New file "'+path+'" created successfully')
 			message = '[+] peepdf updated successfully'
 			if newVersion != '':
 				message += ' to '+newVersion
-			print message
+			print(message)
 			
 	else:
 		if len(args) == 1:
@@ -326,7 +326,7 @@ try:
 			statsDict = pdf.getStats()
 		
 		if options.scriptFile != None:
-			from PDFConsole import PDFConsole
+			from peepdf.PDFConsole import PDFConsole
 			scriptFileObject = open(options.scriptFile,'rb')
 			console = PDFConsole(pdf,stdin=scriptFileObject)
 			try:
@@ -347,7 +347,7 @@ try:
 				try:
 					from lxml import etree
 					xml = getPeepXML(statsDict, version, revision)
-					print xml
+					print(xml)
 				except:
 					errorMessage = '*** Error: Exception while generating the XML file!!'
 					traceback.print_exc(file=open(errorsFile,'a'))
@@ -477,9 +477,9 @@ try:
 								stats += '\t\t' + url + newLine
 						stats += newLine * 2
 				if fileName != None:
-					print stats
+					print(stats)
 				if options.isInteractive:
-					from PDFConsole import PDFConsole
+					from peepdf.PDFConsole import PDFConsole
 					console = PDFConsole(pdf, options.avoidColors)
 					while not console.leaving:
 						try:
@@ -488,7 +488,7 @@ try:
 							errorMessage = '*** Error: Exception not handled using the interactive console!! Please, report it to the author!!'
 							if COLORIZED_OUTPUT and not options.avoidColors:
 								errorMessage = errorColor + errorMessage + Style.RESET_ALL
-							print errorMessage + newLine
+							print(errorMessage + newLine)
 							traceback.print_exc(file=open(errorsFile,'a'))
 except Exception as e:
 	excName,excReason = e.args
@@ -497,7 +497,7 @@ except Exception as e:
 		traceback.print_exc(file=open(errorsFile,'a'))
 	if COLORIZED_OUTPUT and not options.avoidColors:
 		errorMessage = errorColor + errorMessage + Style.RESET_ALL
-	print errorMessage + newLine
+	print(errorMessage + newLine)
 finally:
 	if os.path.exists(errorsFile):
 		message = newLine + 'Please, don\'t forget to report the errors found:' + newLine*2 

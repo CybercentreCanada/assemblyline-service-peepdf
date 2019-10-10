@@ -17,7 +17,7 @@ __author__ = "Adam Newman"
 
 #Normally use relative import. In test mode use local import.
 try:from .aes_tables import sbox,i_sbox,galI,galNI
-except ValueError:from aes_tables import sbox,i_sbox,galI,galNI
+except ValueError:from peepdf.aespython.aes_tables import sbox,i_sbox,galI,galNI
 ups=",".join("s%x"%x for x in range(16))
 upr=ups.replace("s","r")
 mix=",".join(",".join(("g{0}[s%x]^g{1}[s%x]^g{2}[s%x]^g{3}[s%x]^r%x"%(i+(i[0]+(0,3,2,1)[j],))).format(j&3,j+1&3,j+2&3,j+3&3) for j in (0,3,2,1)) for i in ((0,1,2,3),(4,5,6,7),(8,9,10,11),(12,13,14,15))).replace("g2","g").replace("g3","g")
@@ -47,8 +47,8 @@ import unittest
 class TestCipher(unittest.TestCase):
     def test_cipher(self):
         """Test AES cipher with all key lengths"""
-        import test_keys
-        import key_expander
+        import peepdf.aespython.test_keys as test_keys
+        import peepdf.aespython.key_expander as key_expander
         test_data = test_keys.TestKeys()
         for key_size in 128, 192, 256:
             test_key_expander = key_expander.KeyExpander(key_size)

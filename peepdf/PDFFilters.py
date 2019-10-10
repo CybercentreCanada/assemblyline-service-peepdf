@@ -1,9 +1,9 @@
 #
 # peepdf is a tool to analyse and modify PDF files
-# http://peepdf.eternal-todo.com
+#    http://peepdf.eternal-todo.com
 #    By Jose Miguel Esparza <jesparza AT eternal-todo.com>
 #
-#    Copyright (C) 2012 Jose Miguel Esparza
+#    Copyright (C) 2011-2017 Jose Miguel Esparza
 #
 #    This file is part of peepdf.
 #
@@ -52,62 +52,63 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 
-"""
+'''
     Module to manage encoding/decoding in PDF files
-"""
+'''
 
-import sys, zlib, lzw, string, struct
-from PDFUtils import getNumsFromBytes, getBytesFromBits, getBitsFromNum
-from ccitt import CCITTFax
-from cStringIO import StringIO
+import zlib
+import struct
+import six
+
+import peepdf.lzw
+
+from peepdf.PDFUtils import getNumsFromBytes, getBytesFromBits, getBitsFromNum
+from peepdf.ccitt import CCITTFax
 
 
 def decodeStream(stream, filter, parameters={}):
-    """
+    '''
         Decode the given stream
 
         @param stream: Stream to be decoded (string)
         @param filter: Filter to apply to decode the stream
         @param parameters: List of PDFObjects containing the parameters for the filter
         @return: A tuple (status,statusContent), where statusContent is the decoded stream in case status = 0 or an error in case status = -1
-    """
-    filter = filter.strip(string.whitespace + '/')
-
-    if filter == 'ASCIIHexDecode' or filter == 'AHx':
+    '''
+    if filter == '/ASCIIHexDecode' or filter == '/AHx':
         ret = asciiHexDecode(stream)
-    elif filter == 'ASCII85Decode' or filter == 'A85':
+    elif filter == '/ASCII85Decode' or filter == '/A85':
         ret = ascii85Decode(stream)
-    elif filter == 'LZWDecode' or filter == 'LZW':
+    elif filter == '/LZWDecode' or filter == '/LZW':
         ret = lzwDecode(stream, parameters)
-    elif filter == 'FlateDecode' or filter == 'Fl':
+    elif filter == '/FlateDecode' or filter == '/Fl':
         ret = flateDecode(stream, parameters)
-    elif filter == 'RunLengthDecode' or filter == 'RL':
+    elif filter == '/RunLengthDecode' or filter == '/RL':
         ret = runLengthDecode(stream)
-    elif filter == 'CCITTFaxDecode' or filter == 'CCF':
+    elif filter == '/CCITTFaxDecode' or filter == '/CCF':
         ret = ccittFaxDecode(stream, parameters)
-    elif filter == 'JBIG2Decode':
+    elif filter == '/JBIG2Decode':
         ret = jbig2Decode(stream, parameters)
-    elif filter == 'DCTDecode' or filter == 'DCT':
+    elif filter == '/DCTDecode' or filter == '/DCT':
         ret = dctDecode(stream, parameters)
-    elif filter == 'JPXDecode':
+    elif filter == '/JPXDecode':
         ret = jpxDecode(stream)
-    elif filter == 'Crypt':
+    elif filter == '/Crypt':
         ret = crypt(stream, parameters)
     else:
-        ret = (-1, '')
-
+        ret = (-1, 'Unknown filter "%s"' % filter)
     return ret
 
 
 def encodeStream(stream, filter, parameters={}):
-    """
+    '''
         Encode the given stream
 
         @param stream: Stream to be decoded (string)
         @param filter: Filter to apply to decode the stream
         @param parameters: List of PDFObjects containing the parameters for the filter
         @return: A tuple (status,statusContent), where statusContent is the encoded stream in case status = 0 or an error in case status = -1
-    """
+    '''
     if filter == '/ASCIIHexDecode':
         ret = asciiHexEncode(stream)
     elif filter == '/ASCII85Decode':
@@ -128,6 +129,8 @@ def encodeStream(stream, filter, parameters={}):
         ret = jpxEncode(stream)
     elif filter == '/Crypt':
         ret = crypt(stream, parameters)
+    else:
+        ret = (-1, 'Unknown filter "%s"' % filter)
     return ret
 
 
@@ -140,20 +143,20 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
     """
     In ASCII85 encoding, every four bytes are encoded with five ASCII
     letters, using 85 different types of characters (as 256**4 < 85**5).
     When the length of the original bytes is not a multiple of 4, a special
     rule is used for round up.
-    
+
     The Adobe's ASCII85 implementation is slightly different from
     its original in handling the last characters.
-    
+
     The sample string is taken from:
       http://en.wikipedia.org/w/index.php?title=Ascii85
-    
+
     >>> ascii85decode('9jqo^BlbD-BleB1DJ+*+F(f,q')
     'Man is distinguished'
     >>> ascii85decode('E,9)oF*2M7/c~>')
@@ -164,12 +167,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 def ascii85Decode(stream):
-    """
+    '''
         Method to decode streams using ASCII85
 
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the decoded PDF stream in case status = 0 or an error in case status = -1
-    """
+    '''
     n = b = 0
     decodedStream = ''
     try:
@@ -195,23 +198,22 @@ def ascii85Decode(stream):
 
 
 def ascii85Encode(stream):
-    """
+    '''
         Method to encode streams using ASCII85 (NOT SUPPORTED YET)
 
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the encoded PDF stream in case status = 0 or an error in case status = -1
-    """
-    encodedStream = ''
+    '''
     return (-1, 'Ascii85Encode not supported yet')
 
 
 def asciiHexDecode(stream):
-    """
+    '''
         Method to decode streams using hexadecimal encoding
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the decoded PDF stream in case status = 0 or an error in case status = -1
-    """
+    '''
     eod = '>'
     decodedStream = ''
     char = ''
@@ -241,12 +243,12 @@ def asciiHexDecode(stream):
 
 
 def asciiHexEncode(stream):
-    """
+    '''
         Method to encode streams using hexadecimal encoding
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the encoded PDF stream in case status = 0 or an error in case status = -1
-    """
+    '''
     try:
         encodedStream = stream.encode('hex')
     except:
@@ -255,55 +257,50 @@ def asciiHexEncode(stream):
 
 
 def flateDecode(stream, parameters):
-    """
+    '''
         Method to decode streams using the Flate algorithm
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the decoded PDF stream in case status = 0 or an error in case status = -1
-    """
-    decodedStream = ""
+    '''
+    decodedStream = ''
     try:
-        safeDecompress = zlib.decompressobj()
-        ioStream = StringIO(stream)
+        if six.PY3:
+            decodedStream = zlib.decompress(stream.encode('latin-1'))
+            decodedStream = decodedStream.decode('latin-1')
 
-        while True:
-            zchunk = ioStream.read(256)
-            if not zchunk:
-                break
-            maybe_ochunk = safeDecompress.decompress(zchunk)
-            if maybe_ochunk:
-                decodedStream += maybe_ochunk
-    except Exception as e:
-        if not "incorrect data check" in str(e):
-            return (-1, 'Error decompressing string')
+        else:
+            decodedStream = zlib.decompress(stream)
+    except Exception as a:
+        return (-1, 'Error decompressing string')
 
-    if parameters == None or parameters == {}:
+    if parameters is None or parameters == {}:
         return (0, decodedStream)
     else:
-        if parameters.has_key('/Predictor'):
+        if "/Predictor" in parameters:
             predictor = parameters['/Predictor'].getRawValue()
         else:
             predictor = 1
         # Columns = number of samples per row
-        if parameters.has_key('/Columns'):
+        if "/Columns" in parameters:
             columns = parameters['/Columns'].getRawValue()
         else:
             columns = 1
         # Colors = number of components per sample
-        if parameters.has_key('/Colors'):
+        if "/Colors" in parameters:
             colors = parameters['/Colors'].getRawValue()
             if colors < 1:
                 colors = 1
         else:
             colors = 1
         # BitsPerComponent: number of bits per color component
-        if parameters.has_key('/BitsPerComponent'):
+        if "/BitsPerComponent" in parameters:
             bits = parameters['/BitsPerComponent'].getRawValue()
             if bits not in [1, 2, 4, 8, 16]:
                 bits = 8
         else:
             bits = 8
-        if predictor != None and predictor != 1:
+        if predictor is not None and predictor != 1:
             ret = post_prediction(decodedStream, predictor, columns, colors, bits)
             return ret
         else:
@@ -311,43 +308,42 @@ def flateDecode(stream, parameters):
 
 
 def flateEncode(stream, parameters):
-    """
+    '''
         Method to encode streams using the Flate algorithm
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the encoded PDF stream in case status = 0 or an error in case status = -1
-    """
-    encodedStream = ''
-    if parameters == None or parameters == {}:
+    '''
+    if parameters is None or parameters == {}:
         try:
             return (0, zlib.compress(stream))
         except:
             return (-1, 'Error compressing string')
     else:
-        if parameters.has_key('/Predictor'):
+        if "/Predicator" in parameters:
             predictor = parameters['/Predictor'].getRawValue()
         else:
             predictor = 1
         # Columns = number of samples per row
-        if parameters.has_key('/Columns'):
+        if "/Columns" in parameters:
             columns = parameters['/Columns'].getRawValue()
         else:
             columns = 1
         # Colors = number of components per sample
-        if parameters.has_key('/Colors'):
+        if "/Colors" in parameters:
             colors = parameters['/Colors'].getRawValue()
             if colors < 1:
                 colors = 1
         else:
             colors = 1
         # BitsPerComponent: number of bits per color component
-        if parameters.has_key('/BitsPerComponent'):
+        if "/BitsPerComponent" in parameters:
             bits = parameters['/BitsPerComponent'].getRawValue()
             if bits not in [1, 2, 4, 8, 16]:
                 bits = 8
         else:
             bits = 8
-        if predictor != None and predictor != 1:
+        if predictor is not None and predictor != 1:
             ret = pre_prediction(stream, predictor, columns, colors, bits)
             if ret[0] == -1:
                 return ret
@@ -361,49 +357,45 @@ def flateEncode(stream, parameters):
 
 
 def lzwDecode(stream, parameters):
-    """
+    '''
         Method to decode streams using the LZW algorithm
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the decoded PDF stream in case status = 0 or an error in case status = -1
-    """
+    '''
     decodedStream = ''
     try:
-        decodedStream = lzw.lzwdecode(stream)
+        decodedStream = peepdf.lzw.lzwdecode(stream)
     except:
         return (-1, 'Error decompressing string')
 
-    if parameters == None or parameters == {}:
+    if parameters is None or parameters == {}:
         return (0, decodedStream)
     else:
-        if parameters.has_key('/Predictor'):
+        if "/Predictor" in parameters:
             predictor = parameters['/Predictor'].getRawValue()
         else:
             predictor = 1
         # Columns = number of samples per row
-        if parameters.has_key('/Columns'):
+        if "/Columns" in parameters:
             columns = parameters['/Columns'].getRawValue()
         else:
             columns = 1
         # Colors = number of components per sample
-        if parameters.has_key('/Colors'):
+        if "/Colors" in parameters:
             colors = parameters['/Colors'].getRawValue()
             if colors < 1:
                 colors = 1
         else:
             colors = 1
         # BitsPerComponent: number of bits per color component
-        if parameters.has_key('/BitsPerComponent'):
+        if "/BitsPerComponent" in parameters:
             bits = parameters['/BitsPerComponent'].getRawValue()
             if bits not in [1, 2, 4, 8, 16]:
                 bits = 8
         else:
             bits = 8
-        if parameters.has_key('/EarlyChange'):
-            earlyChange = parameters['/EarlyChange'].getRawValue()
-        else:
-            earlyChange = 1
-        if predictor != None and predictor != 1:
+        if predictor is not None and predictor != 1:
             ret = post_prediction(decodedStream, predictor, columns, colors, bits)
             return ret
         else:
@@ -411,50 +403,46 @@ def lzwDecode(stream, parameters):
 
 
 def lzwEncode(stream, parameters):
-    """
+    '''
         Method to encode streams using the LZW algorithm
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the encoded PDF stream in case status = 0 or an error in case status = -1
-    """
+    '''
     encodedStream = ''
-    if parameters == None or parameters == {}:
+    if parameters is None or parameters == {}:
         try:
-            generator = lzw.compress(stream)
+            generator = peepdf.lzw.compress(stream)
             for c in generator:
                 encodedStream += c
             return (0, encodedStream)
         except:
             return (-1, 'Error compressing string')
     else:
-        if parameters.has_key('/Predictor'):
+        if "/Predictor" in parameters:
             predictor = parameters['/Predictor'].getRawValue()
         else:
             predictor = 1
         # Columns = number of samples per row
-        if parameters.has_key('/Columns'):
+        if "/Columns" in parameters:
             columns = parameters['/Columns'].getRawValue()
         else:
             columns = 1
         # Colors = number of components per sample
-        if parameters.has_key('/Colors'):
+        if "/Colors" in parameters:
             colors = parameters['/Colors'].getRawValue()
             if colors < 1:
                 colors = 1
         else:
             colors = 1
         # BitsPerComponent: number of bits per color component
-        if parameters.has_key('/BitsPerComponent'):
+        if "/BitsPerComponent" in parameters:
             bits = parameters['/BitsPerComponent'].getRawValue()
             if bits not in [1, 2, 4, 8, 16]:
                 bits = 8
         else:
             bits = 8
-        if parameters.has_key('/EarlyChange'):
-            earlyChange = parameters['/EarlyChange'].getRawValue()
-        else:
-            earlyChange = 1
-        if predictor != None and predictor != 1:
+        if predictor is not None and predictor != 1:
             ret = pre_prediction(stream, predictor, columns, colors, bits)
             if ret[0] == -1:
                 return ret
@@ -462,7 +450,7 @@ def lzwEncode(stream, parameters):
         else:
             output = stream
         try:
-            generator = lzw.compress(output)
+            generator = peepdf.lzw.compress(output)
             for c in generator:
                 encodedStream += c
             return (0, encodedStream)
@@ -471,24 +459,24 @@ def lzwEncode(stream, parameters):
 
 
 def pre_prediction(stream, predictor, columns, colors, bits):
-    """
+    '''
         Predictor function to make the stream more predictable and improve compression (PDF Specification)
-    
+
         @param stream: The stream to be modified
         @param predictor: The type of predictor to apply
         @param columns: Number of samples per row
         @param colors: Number of colors per sample
         @param bits: Number of bits per color
         @return: A tuple (status,statusContent), where statusContent is the modified stream in case status = 0 or an error in case status = -1
-    """
+    '''
 
     output = ''
-    #TODO: TIFF and more PNG predictions
+    # TODO: TIFF and more PNG predictions
 
     # PNG prediction
     if predictor >= 10 and predictor <= 15:
         # PNG prediction can vary from row to row
-        for row in xrange(len(stream) / columns):
+        for row in range(len(stream) / columns):
             rowdata = [ord(x) for x in stream[(row * columns):((row + 1) * columns)]]
             filterByte = predictor - 10
             rowdata = [filterByte] + rowdata
@@ -511,16 +499,16 @@ def pre_prediction(stream, predictor, columns, colors, bits):
 
 
 def post_prediction(decodedStream, predictor, columns, colors, bits):
-    """
+    '''
         Predictor function to obtain the real stream, removing the prediction (PDF Specification)
-    
+
         @param decodedStream: The decoded stream to be modified
         @param predictor: The type of predictor to apply
         @param columns: Number of samples per row
         @param colors: Number of colors per sample
         @param bits: Number of bits per color
         @return: A tuple (status,statusContent), where statusContent is the modified decoded stream in case status = 0 or an error in case status = -1
-    """
+    '''
 
     output = ''
     bytesPerRow = (colors * bits * columns + 7) / 8
@@ -556,13 +544,11 @@ def post_prediction(decodedStream, predictor, columns, colors, bits):
         numSamplesPerRow = columns + 1
         bytesPerSample = (colors * bits + 7) / 8
         upRowdata = (0,) * numSamplesPerRow
-        for row in xrange(numRows):
+        for row in range(numRows):
             rowdata = [ord(x) for x in decodedStream[(row * bytesPerRow):((row + 1) * bytesPerRow)]]
             # PNG prediction can vary from row to row
             filterByte = rowdata[0]
             rowdata[0] = 0
-
-            numSamplesPerRow = min(len(rowdata), numSamplesPerRow)
 
             if filterByte == 0:
                 # None
@@ -612,7 +598,7 @@ def post_prediction(decodedStream, predictor, columns, colors, bits):
                     rowdata[i] = (rowdata[i] + nearest) % 256
             else:
                 # Optimum - 15
-                #return (-1,'Unsupported predictor')
+                # return (-1,'Unsupported predictor')
                 pass
             upRowdata = rowdata
             output += (''.join([chr(x) for x in rowdata[1:]]))
@@ -622,12 +608,12 @@ def post_prediction(decodedStream, predictor, columns, colors, bits):
 
 
 def runLengthDecode(stream):
-    """
+    '''
         Method to decode streams using the Run-Length algorithm
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the decoded PDF stream in case status = 0 or an error in case status = -1
-    """
+    '''
     decodedStream = ''
     index = 0
     try:
@@ -647,26 +633,25 @@ def runLengthDecode(stream):
 
 
 def runLengthEncode(stream):
-    """
+    '''
         Method to encode streams using the Run-Length algorithm (NOT IMPLEMENTED YET)
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the encoded PDF stream in case status = 0 or an error in case status = -1
-    """
-    encodedStream = ''
+    '''
     return (-1, 'RunLengthEncode not supported yet')
 
 
 def ccittFaxDecode(stream, parameters):
-    """
-        Method to decode streams using the CCITT facsimile standard (NOT IMPLEMENTED YET)
-    
+    '''
+        Method to decode streams using the CCITT facsimile standard
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the decoded PDF stream in case status = 0 or an error in case status = -1
-    """
+    '''
     decodedStream = ''
 
-    if parameters == None or parameters == {}:
+    if parameters is None or parameters == {}:
         try:
             decodedStream = CCITTFax().decode(stream)
             return (0, decodedStream)
@@ -674,7 +659,7 @@ def ccittFaxDecode(stream, parameters):
             return (-1, 'Error decompressing string')
     else:
         # K = A code identifying the encoding scheme used
-        if parameters.has_key('/K'):
+        if "/K" in parameters:
             k = parameters['/K'].getRawValue()
             if type(k) != int:
                 k = 0
@@ -685,7 +670,7 @@ def ccittFaxDecode(stream, parameters):
         else:
             k = 0
         # EndOfLine = A flag indicating whether end-of-line bit patterns are required to be present in the encoding.
-        if parameters.has_key('/EndOfLine'):
+        if "/EndOfLine" in parameters:
             eol = parameters['/EndOfLine'].getRawValue()
             if eol == 'true':
                 eol = True
@@ -694,7 +679,7 @@ def ccittFaxDecode(stream, parameters):
         else:
             eol = False
         # EncodedByteAlign = A flag indicating whether the filter expects extra 0 bits before each encoded line so that the line begins on a byte boundary
-        if parameters.has_key('/EncodedByteAlign'):
+        if "/EncodeByteAlign" in parameters:
             byteAlign = parameters['/EncodedByteAlign'].getRawValue()
             if byteAlign == 'true':
                 byteAlign = True
@@ -703,21 +688,21 @@ def ccittFaxDecode(stream, parameters):
         else:
             byteAlign = False
         # Columns = The width of the image in pixels.
-        if parameters.has_key('/Columns'):
+        if "/Columns" in parameters:
             columns = parameters['/Columns'].getRawValue()
             if type(columns) != int:
                 columns = 1728
         else:
             columns = 1728
         # Rows = The height of the image in scan lines.
-        if parameters.has_key('/Rows'):
+        if "/Rows" in parameters:
             rows = parameters['/Rows'].getRawValue()
             if type(rows) != int:
                 rows = 0
         else:
             rows = 0
         # EndOfBlock = number of samples per row
-        if parameters.has_key('/EndOfBlock'):
+        if "/EndOfBlock" in parameters:
             eob = parameters['/EndOfBlock'].getRawValue()
             if eob == 'false':
                 eob = False
@@ -726,7 +711,7 @@ def ccittFaxDecode(stream, parameters):
         else:
             eob = True
         # BlackIs1 = A flag indicating whether 1 bits are to be interpreted as black pixels and 0 bits as white pixels
-        if parameters.has_key('/BlackIs1'):
+        if "/BlackIs1" in parameters:
             blackIs1 = parameters['/BlackIs1'].getRawValue()
             if blackIs1 == 'true':
                 blackIs1 = True
@@ -735,7 +720,7 @@ def ccittFaxDecode(stream, parameters):
         else:
             blackIs1 = False
         # DamagedRowsBeforeError = The number of damaged rows of data to be tolerated before an error occurs
-        if parameters.has_key('/DamagedRowsBeforeError'):
+        if "/DamagedRowsBeforeError" in parameters:
             damagedRowsBeforeError = parameters['/DamagedRowsBeforeError'].getRawValue()
         else:
             damagedRowsBeforeError = 0
@@ -748,121 +733,124 @@ def ccittFaxDecode(stream, parameters):
 
 
 def ccittFaxEncode(stream, parameters):
-    """
+    '''
         Method to encode streams using the CCITT facsimile standard (NOT IMPLEMENTED YET)
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the encoded PDF stream in case status = 0 or an error in case status = -1
-    """
-    encodedStream = ''
+    '''
     return (-1, 'CcittFaxEncode not supported yet')
 
 
 def crypt(stream, parameters):
-    """
+    '''
         Method to encrypt streams using a PDF security handler (NOT IMPLEMENTED YET)
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the encrypted PDF stream in case status = 0 or an error in case status = -1
-    """
-    decodedStream = ''
-    if parameters == None or parameters == {}:
+    '''
+    if parameters is None or parameters == {}:
         return (0, stream)
     else:
-        if not parameters.has_key('/Name') or parameters['/Name'] == None:
+        if "/Name" not in parameters or parameters['/Name'] is None:
             return (0, stream)
         else:
             cryptFilterName = parameters['/Name'].getValue()
             if cryptFilterName == 'Identity':
                 return (0, stream)
             else:
-                #TODO: algorithm is cryptFilterName, specified in the /CF dictionary
+                # TODO: algorithm is cryptFilterName, specified in the /CF dictionary
                 return (-1, 'Crypt not supported yet')
 
 
 def decrypt(stream, parameters):
-    """
+    '''
         Method to decrypt streams using a PDF security handler (NOT IMPLEMENTED YET)
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the decrypted PDF stream in case status = 0 or an error in case status = -1
-    """
-    encodedStream = ''
-    if parameters == None or parameters == {}:
+    '''
+    if parameters is None or parameters == {}:
         return (0, stream)
     else:
-        if not parameters.has_key('/Name') or parameters['/Name'] == None:
+        if "/Name" not in parameters or parameters['/Name'] is None:
             return (0, stream)
         else:
             cryptFilterName = parameters['/Name'].getValue()
             if cryptFilterName == 'Identity':
                 return (0, stream)
             else:
-                #TODO: algorithm is cryptFilterName, specified in the /CF dictionary
+                # TODO: algorithm is cryptFilterName, specified in the /CF dictionary
                 return (-1, 'Decrypt not supported yet')
 
 
 def dctDecode(stream, parameters):
-    """
+    '''
         Method to decode streams using a DCT technique based on the JPEG standard (NOT IMPLEMENTED YET)
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the decoded PDF stream in case status = 0 or an error in case status = -1
-    """
+    '''
     decodedStream = ''
-    return (-1, 'DctDecode not supported yet')
+    try:
+        from PIL import Image
+        import io
+    except:
+        return (-1, 'Python Imaging Library (PIL) not installed')
+    # Quick implementation, assuming the library can detect the parameters
+    try:
+        im = Image.open(io.StringIO(stream))
+        decodedStream = im.tostring()
+        return (0, decodedStream)
+    except:
+        return (-1, 'Error decompresing image data')
 
 
 def dctEncode(stream, parameters):
-    """
+    '''
         Method to encode streams using a DCT technique based on the JPEG standard (NOT IMPLEMENTED YET)
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the encoded PDF stream in case status = 0 or an error in case status = -1
-    """
-    encodedStream = ''
+    '''
     return (-1, 'DctEncode not supported yet')
 
 
 def jbig2Decode(stream, parameters):
-    """
+    '''
         Method to decode streams using the JBIG2 standard (NOT IMPLEMENTED YET)
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the decoded PDF stream in case status = 0 or an error in case status = -1
-    """
-    decodedStream = ''
+    '''
     return (-1, 'Jbig2Decode not supported yet')
 
 
 def jbig2Encode(stream, parameters):
-    """
+    '''
         Method to encode streams using the JBIG2 standard (NOT IMPLEMENTED YET)
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the encoded PDF stream in case status = 0 or an error in case status = -1
-    """
-    encodedStream = ''
+    '''
     return (-1, 'Jbig2Encode not supported yet')
 
 
 def jpxDecode(stream):
-    """
+    '''
         Method to decode streams using the JPEG2000 standard (NOT IMPLEMENTED YET)
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the decoded PDF stream in case status = 0 or an error in case status = -1
-    """
-    decodedStream = ''
+    '''
     return (-1, 'JpxDecode not supported yet')
 
 
 def jpxEncode(stream):
-    """
+    '''
         Method to encode streams using the JPEG2000 standard (NOT IMPLEMENTED YET)
-    
+
         @param stream: A PDF stream
         @return: A tuple (status,statusContent), where statusContent is the encoded PDF stream in case status = 0 or an error in case status = -1
-    """
-    encodedStream = ''
+    '''
     return (-1, 'JpxEncode not supported yet')
