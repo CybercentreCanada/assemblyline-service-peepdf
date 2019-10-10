@@ -1,508 +1,603 @@
-#!/usr/bin/env python
+from __future__ import absolute_import
 
-#
-#	peepdf is a tool to analyse and modify PDF files
-#	http://peepdf.eternal-todo.com
-#	By Jose Miguel Esparza <jesparza AT eternal-todo.com>
-#
-#	Copyright (C) 2011-2013 Jose Miguel Esparza
-#
-#	This file is part of peepdf.
-#
-#		peepdf is free software: you can redistribute it and/or modify
-#		it under the terms of the GNU General Public License as published by
-#		the Free Software Foundation, either version 3 of the License, or
-#		(at your option) any later version.
-#
-#		peepdf is distributed in the hope that it will be useful,
-#		but WITHOUT ANY WARRANTY; without even the implied warranty of
-#		MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
-#		GNU General Public License for more details.
-#
-#		You should have received a copy of the GNU General Public License
-#		along with peepdf.	If not, see <http://www.gnu.org/licenses/>.
-#
+import gc
+import hashlib
+import os
+import re
 
-'''
-	Initial script to launch the tool
-'''
+from base64 import b64decode
 
-import sys, os, optparse, re, urllib2, datetime, hashlib, traceback
-from datetime import datetime
-from peepdf.PDFCore import PDFParser,vulnsDict
- 
-import pylibemu
+from assemblyline.common.hexdump import hexdump
+from assemblyline_v4_service.common.result import Result, ResultSection, Heuristic, BODY_FORMAT
+from assemblyline_v4_service.common.base import ServiceBase
 
-EMU_MODULE = True
-
-try:
-	from peepdf.colorama import init, Fore, Back, Style
-	init()
-	COLORIZED_OUTPUT = True
-	warningColor = Fore.YELLOW
-	errorColor = Fore.RED
-	staticColor = Fore.BLUE
-except:
-	COLORIZED_OUTPUT = False
-
-def getRepPaths(url, path = ''):
-	paths = []
-	dumbReDirs = '<li><a[^>]*?>(.*?)/</a></li>'
-	dumbReFiles = '<li><a[^>]*?>([^/]*?)</a></li>'
-	
-	try:
-		browsingPage = urllib2.urlopen(url+path).read()
-	except:
-		sys.exit('[x] Connection error while getting browsing page "'+url+path+'"')
-	dirs = re.findall(dumbReDirs, browsingPage)
-	files = re.findall(dumbReFiles, browsingPage)
-	for file in files:
-		if file != '..':
-			if path == '':
-				paths.append(file)
-			else:
-				paths.append(path + '/' + file)
-	for dir in dirs:
-		if path == '':
-			dirPaths = getRepPaths(url, dir)
-		else:
-			dirPaths = getRepPaths(url, path+'/'+dir)
-		paths += dirPaths
-	return paths
-
-def getLocalFilesInfo(filesList):
-	localFilesInfo = {}
-	print('[-] Getting local files information...')
-	for path in filesList:
-		if os.path.exists(path):
-			content = open(path,'rb').read()
-			shaHash = hashlib.sha256(content).hexdigest()
-			localFilesInfo[path] = shaHash
-	print('[+] Done')
-	return localFilesInfo
-
-def getPeepXML(statsDict, version, revision):
-	root = etree.Element('peepdf_analysis', version = version+' r'+revision, url = 'http://peepdf.eternal-todo.com', author = 'Jose Miguel Esparza')
-	analysisDate = etree.SubElement(root, 'date')
-	analysisDate.text = datetime.today().strftime('%Y-%m-%d %H:%M')
-	basicInfo = etree.SubElement(root, 'basic')
-	fileName = etree.SubElement(basicInfo, 'filename')
-	fileName.text = statsDict['File']
-	md5 = etree.SubElement(basicInfo, 'md5')
-	md5.text = statsDict['MD5']
-	sha1 = etree.SubElement(basicInfo, 'sha1')
-	sha1.text = statsDict['SHA1']
-	sha256 = etree.SubElement(basicInfo, 'sha256')
-	sha256.text = statsDict['SHA256']
-	size = etree.SubElement(basicInfo, 'size')
-	size.text = statsDict['Size']
-	version = etree.SubElement(basicInfo, 'pdf_version')
-	version.text = statsDict['Version']
-	binary = etree.SubElement(basicInfo, 'binary', status = statsDict['Binary'].lower())
-	linearized = etree.SubElement(basicInfo, 'linearized', status = statsDict['Linearized'].lower())
-	encrypted = etree.SubElement(basicInfo, 'encrypted', status = statsDict['Encrypted'].lower())
-	if statsDict['Encryption Algorithms'] != []:
-		algorithms = etree.SubElement(encrypted, 'algorithms')
-		for algorithmInfo in statsDict['Encryption Algorithms']:
-			algorithm = etree.SubElement(algorithms, 'algorithm', bits = str(algorithmInfo[1]))
-			algorithm.text = algorithmInfo[0]
-	updates = etree.SubElement(basicInfo, 'updates')
-	updates.text = statsDict['Updates']
-	objects = etree.SubElement(basicInfo, 'num_objects')
-	objects.text = statsDict['Objects']
-	streams = etree.SubElement(basicInfo, 'num_streams')
-	streams.text = statsDict['Streams']
-	comments = etree.SubElement(basicInfo, 'comments')
-	comments.text = statsDict['Comments']
-	errors = etree.SubElement(basicInfo, 'errors', num = str(len(statsDict['Errors'])))
-	for error in statsDict['Errors']:
-		errorMessageXML = etree.SubElement(errors, 'error_message')
-		errorMessageXML.text = error
-	advancedInfo = etree.SubElement(root, 'advanced')
-	for version in range(len(statsDict['Versions'])):
-		statsVersion = statsDict['Versions'][version]
-		if version == 0:
-			versionType = 'original'
-		else:
-			versionType = 'update'
-		versionInfo = etree.SubElement(advancedInfo, 'version', num = str(version), type = versionType)
-		catalog = etree.SubElement(versionInfo, 'catalog')
-		if statsVersion['Catalog'] != None:
-			catalog.set('object_id', statsVersion['Catalog'])
-		info = etree.SubElement(versionInfo, 'info')
-		if statsVersion['Info'] != None:
-			info.set('object_id', statsVersion['Info'])
-		objects = etree.SubElement(versionInfo, 'objects', num = statsVersion['Objects'][0])
-		for id in statsVersion['Objects'][1]:
-			object = etree.SubElement(objects, 'object', id = str(id))
-			if statsVersion['Compressed Objects'] != None:
-				if id in statsVersion['Compressed Objects'][1]:
-					object.set('compressed','true')
-				else:
-					object.set('compressed','false')
-			if statsVersion['Errors'] != None:
-				if id in statsVersion['Errors'][1]:
-					object.set('errors','true')
-				else:
-					object.set('errors','false')
-		streams = etree.SubElement(versionInfo, 'streams', num = statsVersion['Streams'][0])
-		for id in statsVersion['Streams'][1]:
-			stream = etree.SubElement(streams, 'stream', id = str(id))
-			if statsVersion['Xref Streams'] != None:
-				if id in statsVersion['Xref Streams'][1]:
-					stream.set('xref_stream','true')
-				else:
-					stream.set('xref_stream','false')
-			if statsVersion['Object Streams'] != None:
-				if id in statsVersion['Object Streams'][1]:
-					stream.set('object_stream','true')
-				else:
-					stream.set('object_stream','false')
-			if statsVersion['Encoded'] != None:
-				if id in statsVersion['Encoded'][1]:
-					stream.set('encoded','true')
-					if statsVersion['Decoding Errors'] != None:
-						if id in statsVersion['Decoding Errors'][1]:
-							stream.set('decoding_errors','true')
-						else:
-							stream.set('decoding_errors','false')
-				else:
-					stream.set('encoded','false')
-		jsObjects = etree.SubElement(versionInfo, 'js_objects')
-		if statsVersion['Objects with JS code'] != None:
-			for id in statsVersion['Objects with JS code'][1]:
-				etree.SubElement(jsObjects, 'container_object', id = str(id))
-		actions = statsVersion['Actions']
-		events = statsVersion['Events']
-		vulns = statsVersion['Vulns']
-		elements = statsVersion['Elements']
-		suspicious = etree.SubElement(versionInfo, 'suspicious_elements')
-		if events != None or actions != None or vulns != None or elements != None:
-			if events != None:
-				triggers = etree.SubElement(suspicious, 'triggers')
-				for event in events:
-					trigger = etree.SubElement(triggers, 'trigger', name = event)
-					for id in events[event]:
-						etree.SubElement(trigger, 'container_object', id = str(id))
-			if actions != None:
-				actionsList = etree.SubElement(suspicious, 'actions')
-				for action in actions:
-					actionInfo = etree.SubElement(actionsList, 'action', name = action)
-					for id in actions[action]:
-						etree.SubElement(actionInfo, 'container_object', id = str(id))
-			if elements != None:
-				elementsList = etree.SubElement(suspicious, 'elements')
-				for element in elements:
-					elementInfo = etree.SubElement(elementsList, 'element', name = element)
-					if vulnsDict.has_key(element):
-						for vulnCVE in vulnsDict[element]:
-							cve = etree.SubElement(elementInfo, 'cve')
-							cve.text = vulnCVE
-					for id in elements[element]:
-						etree.SubElement(elementInfo, 'container_object', id = str(id))
-			if vulns != None:
-				vulnsList = etree.SubElement(suspicious, 'js_vulns')
-				for vuln in vulns:
-					vulnInfo = etree.SubElement(vulnsList, 'vulnerable_function', name = vuln)
-					if vulnsDict.has_key(vuln):
-						for vulnCVE in vulnsDict[vuln]:
-							cve = etree.SubElement(vulnInfo, 'cve')
-							cve.text = vulnCVE
-					for id in vulns[vuln]:
-						etree.SubElement(vulnInfo, 'container_object', id = str(id))
-		urls = statsVersion['URLs']
-		suspiciousURLs = etree.SubElement(versionInfo, 'suspicious_urls')
-		if urls != None:
-			for url in urls:
-				urlInfo = etree.SubElement(versionInfo, 'url')
-				urlInfo.text = url
-	return etree.tostring(root, pretty_print=True)
-
-	
-author = 'Jose Miguel Esparza' 
-email = 'peepdf AT eternal-todo.com'
-url = 'http://peepdf.eternal-todo.com'
-twitter = 'http://twitter.com/EternalTodo'
-peepTwitter = 'http://twitter.com/peepdf'
-version = '0.2'
-revision = '183'   
-stats = ''
-pdf = None
-fileName = None
-statsDict = None
-newLine = os.linesep
-errorsFile = 'errors.txt'
+BANNED_TYPES = ["xref", "objstm", "xobject", "metadata", "3d", "pattern", None]
 
 
-versionHeader = 'Version: peepdf ' + version + ' r' + revision
-peepdfHeader =  versionHeader + newLine*2 +\
-			   url + newLine +\
-			   peepTwitter + newLine +\
-			   email + newLine*2 +\
-			   author + newLine +\
-			   twitter + newLine
+def validate_non_humanreadable_buff(data, buff_min_size=256, whitespace_ratio=0.10):
+    ws_count = data.count(" ")
+    ws_count += data.count("%20") * 3
+    if len(data) >= buff_min_size:
+        if ws_count * 1.0 / len(data) < whitespace_ratio:
+            return True
 
-argsParser = optparse.OptionParser(usage='Usage: '+sys.argv[0]+' [options] PDF_file',description=versionHeader)
-argsParser.add_option('-i', '--interactive', action='store_true', dest='isInteractive', default=False, help='Sets console mode.')
-argsParser.add_option('-s', '--load-script', action='store', type='string', dest='scriptFile', help='Loads the commands stored in the specified file and execute them.')
-argsParser.add_option('-f', '--force-mode', action='store_true', dest='isForceMode', default=False, help='Sets force parsing mode to ignore errors.')
-argsParser.add_option('-l', '--loose-mode', action='store_true', dest='isLooseMode', default=False, help='Sets loose parsing mode to catch malformed objects.')
-argsParser.add_option('-u', '--update', action='store_true', dest='update', default=False, help='Updates peepdf with the latest files from the repository.')
-argsParser.add_option('-g', '--grinch-mode', action='store_true', dest='avoidColors', default=False, help='Avoids colorized output in the interactive console.')
-argsParser.add_option('-v', '--version', action='store_true', dest='version', default=False, help='Shows program\'s version number.')
-argsParser.add_option('-x', '--xml', action='store_true', dest='xmlOutput', default=False, help='Shows the document information in XML format.')
-(options, args) = argsParser.parse_args()
+    return False
 
-try:
-	if options.version:
-		print(peepdfHeader)
-	elif options.update:
-		updated = False
-		newVersion = ''
-		localVersion = 'v'+version+' r'+revision
-		reVersion = 'version = \'(\d\.\d)\'\s*?revision = \'(\d+)\''
-		repURL = 'http://peepdf.googlecode.com/svn/trunk/'
-		print('[-] Checking if there are new updates...')
-		try:
-			remotePeepContent = urllib2.urlopen(repURL+'peepdf.py').read()
-		except:
-			sys.exit('[x] Connection error while getting file "'+path+'"')
-		repVer = re.findall(reVersion, remotePeepContent)
-		if repVer != []:
-			newVersion = 'v'+repVer[0][0]+' r'+repVer[0][1]
-		else:
-			sys.exit('[x] Error getting the version number from the repository')
-		if localVersion == newVersion:
-			print('[+] No changes! ;)')
-		else:
-			print('[+] There are new updates!!')
-			print('[-] Getting paths from the repository...')
-			pathNames = getRepPaths(repURL,'')
-			print('[+] Done')
-			localFilesInfo = getLocalFilesInfo(pathNames)
-			print('[-] Checking files...')
-			for path in pathNames:
-				try:
-					fileContent = urllib2.urlopen(repURL+path).read()
-				except:
-					sys.exit('[x] Connection error while getting file "'+path+'"')
-				if localFilesInfo.has_key(path):
-					# File exists
-					# Checking hash
-					shaHash = hashlib.sha256(fileContent).hexdigest()
-					if shaHash != localFilesInfo[path]:
-						open(path,'wb').write(fileContent)
-						print('[+] File "'+path+'" updated successfully')
-				else:
-					# File does not exist
-					index = path.rfind('/')
-					if index != -1:
-						dirsPath = path[:index]
-						if not os.path.exists(dirsPath):
-							print('[+] New directory "'+dirsPath+'" created successfully')
-							os.makedirs(dirsPath)
-					open(path,'wb').write(fileContent)
-					print('[+] New file "'+path+'" created successfully')
-			message = '[+] peepdf updated successfully'
-			if newVersion != '':
-				message += ' to '+newVersion
-			print(message)
-			
-	else:
-		if len(args) == 1:
-			fileName = args[0]
-			if not os.path.exists(fileName):
-				sys.exit('Error: The file "'+fileName+'" does not exist!!')
-		elif len(args) > 1 or (len(args) == 0 and not options.isInteractive):
-			sys.exit(argsParser.print_help())
-			
-		if options.scriptFile != None:
-			if not os.path.exists(options.scriptFile):
-				sys.exit('Error: The script file "'+options.scriptFile+'" does not exist!!')
-			
-		if fileName != None:
-			pdfParser = PDFParser()
-			ret,pdf = pdfParser.parse(fileName, options.isForceMode, options.isLooseMode)
-			statsDict = pdf.getStats()
-		
-		if options.scriptFile != None:
-			from peepdf.PDFConsole import PDFConsole
-			scriptFileObject = open(options.scriptFile,'rb')
-			console = PDFConsole(pdf,stdin=scriptFileObject)
-			try:
-				console.cmdloop()
-			except:
-				errorMessage = '*** Error: Exception not handled using the batch mode!!'
-				'''
-				if COLORIZED_OUTPUT and not options.avoidColors:
-					errorMessage = errorColor + errorMessage + Style.RESET_ALL
-				print errorMessage + newLine
-				traceback.print_exc(file=open(errorsFile,'a'))
-				'''
-				scriptFileObject.close()
-				traceback.print_exc(file=open(errorsFile,'a'))
-				raise Exception('PeepException','Send me an email ;)')	
-		else:
-			if options.xmlOutput:
-				try:
-					from lxml import etree
-					xml = getPeepXML(statsDict, version, revision)
-					print(xml)
-				except:
-					errorMessage = '*** Error: Exception while generating the XML file!!'
-					traceback.print_exc(file=open(errorsFile,'a'))
-					'''
-					if COLORIZED_OUTPUT and not options.avoidColors:
-						errorMessage = errorColor + errorMessage + Style.RESET_ALL
-					print errorMessage + newLine
-					traceback.print_exc(file=open(errorsFile,'a'))
-					'''
-					raise Exception('PeepException','Send me an email ;)')
-			else:
-				if statsDict != None:
-					if not JS_MODULE:
-						if COLORIZED_OUTPUT and options.isInteractive and not options.avoidColors:
-							stats += warningColor + 'Warning: Spidermonkey is not installed!!' + Style.RESET_ALL
-						else:
-							stats += 'Warning: Spidermonkey is not installed!!'
-						stats += newLine
-					if not EMU_MODULE:
-						if COLORIZED_OUTPUT and options.isInteractive and not options.avoidColors:
-							stats += warningColor + 'Warning: pylibemu is not installed!!' + Style.RESET_ALL
-						else:
-							stats += 'Warning: pylibemu is not installed!!'
-						stats += newLine
-					errors = statsDict['Errors']
-					for error in errors:
-						if error.find('Decryption error') != -1:
-							if COLORIZED_OUTPUT and options.isInteractive and not options.avoidColors:
-								stats += errorColor + error + Style.RESET_ALL
-							else:
-								stats += error
-							stats += newLine
-					if stats != '':
-						stats += newLine
-					statsDict = pdf.getStats()
-					if COLORIZED_OUTPUT and options.isInteractive and not options.avoidColors:
-						beforeStaticLabel = staticColor
-						afterStaticLabel = Style.RESET_ALL
-					else:
-						beforeStaticLabel = ''
-						afterStaticLabel = ''								
-					stats += beforeStaticLabel + 'File: ' + afterStaticLabel + statsDict['File'] + newLine
-					stats += beforeStaticLabel + 'MD5: ' + afterStaticLabel + statsDict['MD5'] + newLine
-					stats += beforeStaticLabel + 'SHA1: ' + afterStaticLabel + statsDict['SHA1'] + newLine
-					#stats += beforeStaticLabel + 'SHA256: ' + afterStaticLabel + statsDict['SHA256'] + newLine
-					stats += beforeStaticLabel + 'Size: ' + afterStaticLabel + statsDict['Size'] + ' bytes' + newLine
-					stats += beforeStaticLabel + 'Version: ' + afterStaticLabel + statsDict['Version'] + newLine
-					stats += beforeStaticLabel + 'Binary: ' + afterStaticLabel + statsDict['Binary'] + newLine
-					stats += beforeStaticLabel + 'Linearized: ' + afterStaticLabel + statsDict['Linearized'] + newLine
-					stats += beforeStaticLabel + 'Encrypted: ' + afterStaticLabel + statsDict['Encrypted']
-					if statsDict['Encryption Algorithms'] != []:
-						stats += ' ('
-						for algorithmInfo in statsDict['Encryption Algorithms']:
-							stats += algorithmInfo[0] + ' ' + str(algorithmInfo[1]) + ' bits, '
-						stats = stats[:-2] + ')'
-					stats += newLine
-					stats += beforeStaticLabel + 'Updates: ' + afterStaticLabel + statsDict['Updates'] + newLine
-					stats += beforeStaticLabel + 'Objects: ' + afterStaticLabel + statsDict['Objects'] + newLine
-					stats += beforeStaticLabel + 'Streams: ' + afterStaticLabel + statsDict['Streams'] + newLine
-					stats += beforeStaticLabel + 'Comments: ' + afterStaticLabel + statsDict['Comments'] + newLine
-					stats += beforeStaticLabel + 'Errors: ' + afterStaticLabel + str(len(statsDict['Errors'])) + newLine*2					
-					for version in range(len(statsDict['Versions'])):
-						statsVersion = statsDict['Versions'][version]
-						stats += beforeStaticLabel + 'Version ' + afterStaticLabel + str(version) + ':' + newLine
-						if statsVersion['Catalog'] != None:
-							stats += beforeStaticLabel + '\tCatalog: ' + afterStaticLabel + statsVersion['Catalog'] + newLine
-						else:
-							stats += beforeStaticLabel + '\tCatalog: ' + afterStaticLabel + 'No' + newLine
-						if statsVersion['Info'] != None:
-							stats += beforeStaticLabel + '\tInfo: ' + afterStaticLabel + statsVersion['Info'] + newLine
-						else:
-							stats += beforeStaticLabel + '\tInfo: ' + afterStaticLabel + 'No' + newLine
-						stats += beforeStaticLabel + '\tObjects ('+statsVersion['Objects'][0]+'): ' + afterStaticLabel + str(statsVersion['Objects'][1]) + newLine
-						if statsVersion['Compressed Objects'] != None:
-							stats += beforeStaticLabel + '\tCompressed objects ('+statsVersion['Compressed Objects'][0]+'): ' + afterStaticLabel + str(statsVersion['Compressed Objects'][1]) + newLine
-						if statsVersion['Errors'] != None:
-							stats += beforeStaticLabel + '\t\tErrors ('+statsVersion['Errors'][0]+'): ' + afterStaticLabel + str(statsVersion['Errors'][1]) + newLine
-						stats += beforeStaticLabel + '\tStreams ('+statsVersion['Streams'][0]+'): ' + afterStaticLabel + str(statsVersion['Streams'][1])
-						if statsVersion['Xref Streams'] != None:
-							stats += newLine + beforeStaticLabel + '\t\tXref streams ('+statsVersion['Xref Streams'][0]+'): ' + afterStaticLabel + str(statsVersion['Xref Streams'][1])
-						if statsVersion['Object Streams'] != None:
-							stats += newLine + beforeStaticLabel + '\t\tObject streams ('+statsVersion['Object Streams'][0]+'): ' + afterStaticLabel + str(statsVersion['Object Streams'][1])
-						if int(statsVersion['Streams'][0]) > 0:
-							stats += newLine + beforeStaticLabel + '\t\tEncoded ('+statsVersion['Encoded'][0]+'): ' + afterStaticLabel + str(statsVersion['Encoded'][1])
-							if statsVersion['Decoding Errors'] != None:
-								stats += newLine + beforeStaticLabel + '\t\tDecoding errors ('+statsVersion['Decoding Errors'][0]+'): ' + afterStaticLabel + str(statsVersion['Decoding Errors'][1])
-						if COLORIZED_OUTPUT and options.isInteractive and not options.avoidColors:
-							beforeStaticLabel = warningColor
-						if statsVersion['Objects with JS code'] != None:
-							stats += newLine + beforeStaticLabel + '\tObjects with JS code ('+statsVersion['Objects with JS code'][0]+'): ' + afterStaticLabel + str(statsVersion['Objects with JS code'][1])
-						actions = statsVersion['Actions']
-						events = statsVersion['Events']
-						vulns = statsVersion['Vulns']
-						elements = statsVersion['Elements']
-						if events != None or actions != None or vulns != None or elements != None:
-							stats += newLine + beforeStaticLabel + '\tSuspicious elements:' + afterStaticLabel + newLine
-							if events != None:
-								for event in events:
-									stats += '\t\t' + beforeStaticLabel + event + ': ' + afterStaticLabel + str(events[event]) + newLine
-							if actions != None:
-								for action in actions:
-									stats += '\t\t' + beforeStaticLabel + action + ': ' + afterStaticLabel + str(actions[action]) + newLine
-							if vulns != None:
-								for vuln in vulns:
-									if vulnsDict.has_key(vuln):
-										stats += '\t\t' + beforeStaticLabel + vuln + ' ('
-										for vulnCVE in vulnsDict[vuln]: 
-											stats += vulnCVE + ',' 
-										stats = stats[:-1] + '): ' + afterStaticLabel + str(vulns[vuln]) + newLine
-									else:
-										stats += '\t\t' + beforeStaticLabel + vuln + ': ' + afterStaticLabel + str(vulns[vuln]) + newLine
-							if elements != None:
-								for element in elements:
-									if vulnsDict.has_key(element):
-										stats += '\t\t' + beforeStaticLabel + element + ' ('
-										for vulnCVE in vulnsDict[element]: 
-											stats += vulnCVE + ',' 
-										stats = stats[:-1] + '): ' + afterStaticLabel + str(elements[element]) + newLine
-									else:
-										stats += '\t\t' + beforeStaticLabel + element + ': ' + afterStaticLabel + str(elements[element]) + newLine
-						if COLORIZED_OUTPUT and options.isInteractive and not options.avoidColors:
-							beforeStaticLabel = staticColor
-						urls = statsVersion['URLs']
-						if urls != None:
-							stats += newLine + beforeStaticLabel + '\tFound URLs:' + afterStaticLabel + newLine
-							for url in urls:
-								stats += '\t\t' + url + newLine
-						stats += newLine * 2
-				if fileName != None:
-					print(stats)
-				if options.isInteractive:
-					from peepdf.PDFConsole import PDFConsole
-					console = PDFConsole(pdf, options.avoidColors)
-					while not console.leaving:
-						try:
-							console.cmdloop()
-						except:
-							errorMessage = '*** Error: Exception not handled using the interactive console!! Please, report it to the author!!'
-							if COLORIZED_OUTPUT and not options.avoidColors:
-								errorMessage = errorColor + errorMessage + Style.RESET_ALL
-							print(errorMessage + newLine)
-							traceback.print_exc(file=open(errorsFile,'a'))
-except Exception as e:
-	excName,excReason = e.args
-	if excName != 'PeepException':
-		errorMessage = '*** Error: Exception not handled!!'
-		traceback.print_exc(file=open(errorsFile,'a'))
-	if COLORIZED_OUTPUT and not options.avoidColors:
-		errorMessage = errorColor + errorMessage + Style.RESET_ALL
-	print(errorMessage + newLine)
-finally:
-	if os.path.exists(errorsFile):
-		message = newLine + 'Please, don\'t forget to report the errors found:' + newLine*2 
-		message += '\t- Sending the file "errors.txt" to the author (mailto:peepdfREMOVETHIS@eternal-todo.com)"' + newLine
-		message += '\t- And/Or creating an issue on the project webpage (https://code.google.com/p/peepdf/issues/list)' + newLine
-		if COLORIZED_OUTPUT and not options.avoidColors:
-			message = errorColor + message + Style.RESET_ALL
-		sys.exit(message)
+
+# noinspection PyGlobalUndefined
+class PeePDF(ServiceBase):
+
+    def __init__(self, config=None):
+        super(PeePDF, self).__init__(config)
+        self.max_pdf_size = config.get('max_pdf_size', 3000000)
+
+    # noinspection PyUnresolvedReferences
+    def import_service_deps(self):
+        global analyseJS, PDFParser, vulnsDict, unescape
+        from peepdf.JSAnalysis import analyseJS, unescape
+        from peepdf.PDFCore import PDFParser, vulnsDict
+
+    # noinspection PyUnusedLocal,PyMethodMayBeStatic
+    def _report_embedded_xdp(self, file_res, chunk_number, binary, leftover):
+        res_section = ResultSection([f"Found {chunk_number}", "Embedded PDF (in XDP)"])
+        res_section.set_heuristic(1, "AL_PEEPDF_1")
+        res_section.add_tag('FILE_SUMMARY', "Embedded PDF (in XDP)", 10, 'IDENTIFICATION')
+        file_res.add_section(res_section)
+
+    def find_xdp_embedded(self, filename, cbin, request):
+        file_res = request.result
+        if "<pdf" in cbin and "<document>" in cbin and "<chunk>" in cbin:
+            chunks = cbin.split("<chunk>")
+
+            chunk_number = 0
+            leftover = ""
+            for chunk in chunks:
+                if "</chunk>" not in chunk:
+                    leftover += chunk.replace("<document>", "").replace('<pdf xmlns="http://ns.adobe.com/xdp/pdf/">',
+                                                                        "")
+                    continue
+
+                chunk_number += 1
+
+                un_b64 = None
+                # noinspection PyBroadException
+                try:
+                    un_b64 = b64decode(chunk.split("</chunk>")[0])
+                except:
+                    self.log.error("Found <pdf>, <document> and <chunk> tags inside an xdp file but could not "
+                                   "un-base64 the content.")
+
+                if un_b64:
+                    new_filename = f"xdp_{chunk_number}.pdf"
+                    file_path = os.path.join(self.working_directory, new_filename)
+                    f = open(file_path, "wb")
+                    f.write(un_b64)
+                    f.close()
+                    request.add_extracted(file_path, f"UnXDP from {filename}")
+
+            if chunk_number > 0:
+                self._report_embedded_xdp(file_res, chunk_number, cbin, leftover)
+
+        return file_res
+
+    def execute(self, request):
+        self.import_service_deps()
+        temp_filename = request.file_path
+
+        # Filter out large documents
+        if os.path.getsize(temp_filename) > self.max_pdf_size:
+            file_res = Result()
+            res = (ResultSection(f"PDF Analysis of the file was skipped because the "
+                                                f"file is too big (limit is {(self.max_pdf_size / 1000 / 1000)} MB)."))
+
+            file_res.add_section(res)
+            request.result = file_res
+            return
+
+        filename = os.path.basename(temp_filename)
+        # noinspection PyUnusedLocal
+        file_content = ''
+        with open(temp_filename, 'rb') as f:
+            file_content = f.read()
+
+        if '<xdp:xdp'.encode(encoding='UTF-8') in file_content:
+            self.find_xdp_embedded(filename, file_content, request)
+
+        self.peepdf_analysis(temp_filename, file_content, request)
+
+    # noinspection PyBroadException
+    @staticmethod
+    def get_big_buffs(data, buff_min_size=256):
+        # Hunt for big variables
+        var_re = r'[^\\]?"(.*?[^\\])"'
+        last_m = None
+        out = []
+
+        for m in re.finditer(var_re, data):
+            # noinspection PyUnresolvedReferences
+            pos = m.regs[0]
+            match = m.group(1)
+            if last_m:
+                last_pos, last_match = last_m
+                between = data[last_pos[1]:pos[0] + 1]
+                try:
+                    between, rest = between.split("//", 1)
+                    try:
+                        between = between.strip() + rest.split("\n", 1)[1].strip()
+                    except:
+                        pass
+                except:
+                    pass
+                finally:
+                    between = between.strip()
+
+                if between == "+":
+                    match = last_match + match
+                    pos = (last_pos[0], pos[1])
+                else:
+                    if validate_non_humanreadable_buff(last_match, buff_min_size=buff_min_size):
+                        out.append(last_match)
+
+            last_m = (pos, match)
+
+        if last_m:
+            if validate_non_humanreadable_buff(last_m[1]):
+                out.append(last_m[1])
+
+        # Hunt for big comments
+        var_comm_re = r"<!--(.*?)--\s?>"
+
+        for m in re.finditer(var_comm_re, data, flags=re.DOTALL):
+            match = m.group(1)
+            if validate_non_humanreadable_buff(match):
+                out.append(match)
+
+        return out
+
+    @staticmethod
+    def check_dangerous_func(data):
+        has_eval = False
+        has_unescape = False
+        # eval
+        temp_eval = data.split("eval")
+        if len(temp_eval) > 1:
+            idx = 0
+            for i in temp_eval[:-1]:
+                idx += 1
+                if (97 <= ord(i[-1]) <= 122) or (65 <= ord(i[-1]) <= 90):
+                    continue
+                if (97 <= ord(temp_eval[idx][0]) <= 122) or \
+                        (65 <= ord(temp_eval[idx][0]) <= 90):
+                    continue
+
+                has_eval = True
+                break
+
+        # unescape
+        temp_unesc = data.split("unescape")
+        if len(temp_unesc) > 1:
+            idx = 0
+            for i in temp_unesc[:-1]:
+                idx += 1
+                if (97 <= ord(i[-1]) <= 122) or (65 <= ord(i[-1]) <= 90):
+                    continue
+                if (97 <= ord(temp_unesc[idx][0]) <= 122) or \
+                        (65 <= ord(temp_unesc[idx][0]) <= 90):
+                    continue
+
+                has_unescape = True
+                break
+
+        return has_eval, has_unescape
+
+    @staticmethod
+    def list_first_x(mylist, size=20):
+        add_reminder = len(mylist) > size
+
+        mylist = mylist[:size]
+        if add_reminder:
+            mylist.append("...")
+
+        return str(mylist)
+
+    # noinspection PyBroadException,PyUnboundLocalVariable
+    def peepdf_analysis(self, temp_filename, file_content, request):
+        file_res = Result()
+        try:
+            res_list = []
+            js_stream = []
+            f_list = []
+            js_dump = []
+
+            pdf_parser = PDFParser()
+            ret, pdf_file = pdf_parser.parse(temp_filename, True, False, file_content)
+            if ret == 0:
+                stats_dict = pdf_file.getStats()
+
+                if ", ".join(stats_dict['Errors']) == "Bad PDF header, %%EOF not found, PDF sections not found, No " \
+                                                      "indirect objects found in the body":
+                    # Not a PDF
+                    return
+
+                res = ResultSection("PDF File information")
+                res.add_line('File: ' + stats_dict['File'])
+                res.add_line(['MD5: ', stats_dict['MD5']])
+                res.add_line(['SHA1: ', stats_dict['SHA1']])
+                res.add_line('SHA256: ' + stats_dict['SHA256'])
+                res.add_line(['Size: ', stats_dict['Size'], ' bytes'])
+                res.add_line('Version: ' + stats_dict['Version'])
+                res.add_line('Binary: ' + stats_dict['Binary'])
+                res.add_line('Linearized: ' + stats_dict['Linearized'])
+                res.add_line('Encrypted: ' + stats_dict['Encrypted'])
+                if stats_dict['Encryption Algorithms']:
+                    temp = ' ('
+                    for algorithmInfo in stats_dict['Encryption Algorithms']:
+                        temp += algorithmInfo[0] + ' ' + str(algorithmInfo[1]) + ' bits, '
+                    temp = temp[:-2] + ')'
+                    res.add_line(temp)
+                res.add_line('Updates: ' + stats_dict['Updates'])
+                res.add_line('Objects: ' + stats_dict['Objects'])
+                res.add_line('Streams: ' + stats_dict['Streams'])
+                res.add_line('Comments: ' + stats_dict['Comments'])
+                res.add_line('Errors: ' + {True: ", ".join(stats_dict['Errors']),
+                                           False: "None"}[len(stats_dict['Errors']) != 0])
+                res.add_line("")
+
+                for version in range(len(stats_dict['Versions'])):
+                    stats_version = stats_dict['Versions'][version]
+                    res_version = ResultSection('Version ' + str(version), parent=res)
+                    if stats_version['Catalog'] is not None:
+                        res_version.add_line('Catalog: ' + stats_version['Catalog'])
+                    else:
+                        res_version.add_line('Catalog: ' + 'No')
+                    if stats_version['Info'] is not None:
+                        res_version.add_line('Info: ' + stats_version['Info'])
+                    else:
+                        res_version.add_line('Info: ' + 'No')
+                    res_version.add_line('Objects (' + stats_version['Objects'][0] + '): ' +
+                                         self.list_first_x(stats_version['Objects'][1]))
+                    if stats_version['Compressed Objects'] is not None:
+                        res_version.add_line('Compressed objects (' + stats_version['Compressed Objects'][0] + '): ' +
+                                             self.list_first_x(stats_version['Compressed Objects'][1]))
+
+                    if stats_version['Errors'] is not None:
+                        res_version.add_line('Errors (' + stats_version['Errors'][0] + '): ' +
+                                             self.list_first_x(stats_version['Errors'][1]))
+                    res_version.add_line('Streams (' + stats_version['Streams'][0] + '): ' +
+                                         self.list_first_x(stats_version['Streams'][1]))
+                    if stats_version['Xref Streams'] is not None:
+                        res_version.add_line('Xref streams (' + stats_version['Xref Streams'][0] + '): ' +
+                                             self.list_first_x(stats_version['Xref Streams'][1]))
+                    if stats_version['Object Streams'] is not None:
+                        res_version.add_line('Object streams (' + stats_version['Object Streams'][0] + '): ' +
+                                             self.list_first_x(stats_version['Object Streams'][1]))
+                    if int(stats_version['Streams'][0]) > 0:
+                        res_version.add_line('Encoded (' + stats_version['Encoded'][0] + '): ' +
+                                             self.list_first_x(stats_version['Encoded'][1]))
+                        if stats_version['Decoding Errors'] is not None:
+                            res_version.add_line('Decoding errors (' + stats_version['Decoding Errors'][0] + '): ' +
+                                                 self.list_first_x(stats_version['Decoding Errors'][1]))
+                    if stats_version['Objects with JS code'] is not None:
+                        res_version.add_line('Objects with JS '
+                                             'code (' + stats_version['Objects with JS code'][0] + '): ' +
+                                             self.list_first_x(stats_version['Objects with JS code'][1]))
+                        js_stream.extend(stats_version['Objects with JS code'][1])
+
+                    actions = stats_version['Actions']
+                    events = stats_version['Events']
+                    vulns = stats_version['Vulns']
+                    elements = stats_version['Elements']
+                    if events is not None or actions is not None or vulns is not None or elements is not None:
+                        res_suspicious = ResultSection('Suspicious elements', parent=res_version)
+                        if events is not None:
+                            for event in events:
+                                res_suspicious.add_line(event + ': ' + self.list_first_x(events[event]))
+                                res_suspicious.set_heuristic(8, "AL_PEEPDF_8")
+                        if actions is not None:
+                            for action in actions:
+                                res_suspicious.add_line(action + ': ' + self.list_first_x(actions[action]))
+                                res_suspicious.set_heuristic(8, "AL_PEEPDF_8")
+                        if vulns is not None:
+                            for vuln in vulns:
+                                if vuln in vulnsDict:
+                                    temp = [vuln, ' (']
+                                    for vulnCVE in vulnsDict[vuln]:
+                                        if len(temp) != 2:
+                                            temp.append(',')
+                                        temp.append(vulnCVE)
+                                        cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE)
+                                        if cve_found:
+                                            res_suspicious.add_tag('EXPLOIT_NAME',
+                                                             vulnCVE[cve_found.start():cve_found.end()],
+                                                             50,
+                                                             usage='IDENTIFICATION')
+                                            res_suspicious.add_tag('FILE_SUMMARY',
+                                                             vulnCVE[cve_found.start():cve_found.end()],
+                                                             50,
+                                                             usage='IDENTIFICATION')
+                                    temp.append('): ')
+                                    temp.append(str(vulns[vuln]))
+                                    res_suspicious.add_line(temp)
+                                else:
+                                    res_suspicious.add_line(vuln + ': ' + str(vulns[vuln]))
+                                res_suspicious.set_heuristic(8, "AL_PEEPDF_8")
+                        if elements is not None:
+                            for element in elements:
+                                if element in vulnsDict:
+                                    temp = [element, ' (']
+                                    for vulnCVE in vulnsDict[element]:
+                                        if len(temp) != 2:
+                                            temp.append(',')
+                                        temp.append(vulnCVE)
+                                        cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE)
+                                        if cve_found:
+                                            res_suspicious.add_tag('EXPLOIT_NAME',
+                                                             vulnCVE[cve_found.start():cve_found.end()],
+                                                             50,
+                                                             usage='IDENTIFICATION')
+                                            res_suspicious.add_tag('FILE_SUMMARY',
+                                                             vulnCVE[cve_found.start():cve_found.end()],
+                                                             50,
+                                                             usage='IDENTIFICATION')
+                                    temp.append('): ')
+                                    temp.append(str(elements[element]))
+                                    res_suspicious.add_line(temp)
+                                    res_suspicious.set_heuristic(8, "AL_PEEPDF_8")
+                                else:
+                                    res_suspicious.add_line('\t\t' + element + ': ' + str(elements[element]))
+                                    res_suspicious.set_heuristic(8, "AL_PEEPDF_8")
+
+                    urls = stats_version['URLs']
+                    if urls is not None:
+                        res.add_line("")
+                        res_url = ResultSection('Found URLs', parent=res)
+                        for url in urls:
+                            res_url.add_line('\t\t' + url)
+                            res_url.set_heuristic(9, "AL_PEEPDF_9")
+
+                    for obj in stats_version['Objects'][1]:
+                        cur_obj = pdf_file.getObject(obj, version)
+
+                        if cur_obj.containsJScode:
+                            cur_res = ResultSection(f"Object [{obj} {version}] contains {len(cur_obj.JSCode)} "
+                                                    f"block of Javascript")
+                            score_modifier = 0
+
+                            js_idx = 0
+                            for js in cur_obj.JSCode:
+                                sub_res = ResultSection('Block of JavaScript:', parent=cur_res)
+                                js_idx += 1
+                                js_score = 0
+                                js_code, unescaped_bytes, _, _ = analyseJS(js)
+
+                                js_dump += [x for x in js_code]
+
+                                # Malicious characteristics
+                                big_buffs = self.get_big_buffs("".join(js_code))
+                                if len(big_buffs) == 1:
+                                    js_score += 500 * len(big_buffs)
+                                if len(big_buffs) > 0:
+                                    js_score += 500 * len(big_buffs)
+                                has_eval, has_unescape = self.check_dangerous_func("".join(js_code))
+                                if has_unescape:
+                                    js_score += 100
+                                if has_eval:
+                                    js_score += 100
+
+                                js_cmt = ""
+                                if has_eval or has_unescape or len(big_buffs) > 0:
+                                    score_modifier += js_score
+                                    js_cmt = "Suspiciously malicious "
+                                    cur_res.add_tag('FILE_SUMMARY', "Suspicious javascript in PDF",
+                                                     50, usage='IDENTIFICATION')
+                                    sub_res.set_heuristic(7, "AL_PEEPDF_7")
+                                js_res = ResultSection(0, f"{js_cmt}Javascript Code (block: {js_idx})",
+                                                       parent=sub_res)
+
+                                if js_score > 0:
+                                    temp_js_outname = f"object{obj}-{version}_{js_idx}.js"
+                                    temp_js_path = os.path.join(self.working_directory, temp_js_outname)
+                                    temp_js_bin = "".join(js_code).encode("utf-8")
+                                    f = open(temp_js_path, "wb")
+                                    f.write(temp_js_bin)
+                                    f.close()
+                                    f_list.append(temp_js_path)
+
+                                    js_res.add_line(["The JavaScript block was saved as ", temp_js_outname])
+                                    if has_eval or has_unescape:
+                                        analysis_res = ResultSection("[Suspicious Functions]",
+                                                                     parent=js_res)
+                                        if has_eval:
+                                            analysis_res.add_line("eval: This javascript block uses eval() function"
+                                                                  " which is often used to launch deobfuscated"
+                                                                  " javascript code.")
+                                            analysis_res.set_heuristic(3, "AL_PEEPDF_3")
+                                        if has_unescape:
+                                            analysis_res.add_line("unescape: This javascript block uses unescape() "
+                                                                  "function. It may be legitimate but it is definitely"
+                                                                  " suspicious since malware often use this to "
+                                                                  "deobfuscate code blocks.")
+                                            analysis_res.set_heuristic(3, "AL_PEEPDF_3")
+
+                                    buff_idx = 0
+                                    for buff in big_buffs:
+                                        buff_idx += 1
+                                        error, new_buff = unescape(buff)
+                                        if error == 0:
+                                            buff = new_buff
+
+                                        if buff not in unescaped_bytes:
+                                            temp_path_name = None
+                                            if ";base64," in buff[:100] and "data:" in buff[:100]:
+                                                temp_path_name = f"obj{obj}_unb64_{buff_idx}.buff"
+                                                try:
+                                                    buff = b64decode(buff.split(";base64,")[1].strip())
+                                                    temp_path = os.path.join(self.working_directory, temp_path_name)
+                                                    f = open(temp_path, "wb")
+                                                    f.write(buff)
+                                                    f.close()
+                                                    f_list.append(temp_path)
+                                                except:
+                                                    self.log.error("Found 'data:;base64, ' buffer "
+                                                                   "but failed to base64 decode.")
+                                                    temp_path_name = None
+
+                                            if temp_path_name is not None:
+                                                buff_cond = f" and was resubmitted as {temp_path_name}"
+                                            else:
+                                                buff_cond = ""
+                                            buff_res = ResultSection(f"A {len(buff)} bytes buffer was found in the javascript "
+                                                          f"block{buff_cond}. Here are the first 256 bytes.",
+                                                          parent=js_res, body=hexdump(buff[:256]),
+                                                          body_format=BODY_FORMAT.MEMORY_DUMP)
+                                            buff_res.set_heuristic(2, "AL_PEEPDF_2")
+
+                                processed_sc = []
+                                sc_idx = 0
+                                for sc in unescaped_bytes:
+                                    if sc not in processed_sc:
+                                        sc_idx += 1
+                                        processed_sc.append(sc)
+
+                                        try:
+                                            sc = sc.decode("hex")
+                                        except:
+                                            pass
+
+                                        shell_score = 500
+                                        temp_path_name = f"obj{obj}_unescaped_{sc_idx}.buff"
+
+                                        shell_res = ResultSection(f"Unknown unescaped {len(sc)} bytes "
+                                                                  f"javascript buffer (id: {sc_idx}) was resubmitted as {temp_path_name}. "
+                                                                  "Here are the first 256 bytes.",
+                                                                  parent=js_res)
+                                        shell_res.set_body(hexdump(sc[:256]), BODY_FORMAT.MEMORY_DUMP)
+
+                                        temp_path = os.path.join(self.working_directory, temp_path_name)
+                                        f = open(temp_path, "wb")
+                                        f.write(sc)
+                                        f.close()
+                                        f_list.append(temp_path)
+
+                                        cur_res.add_tag('FILE_SUMMARY', "Unescaped Javascript Buffer",
+                                                         50,
+                                                         usage='IDENTIFICATION')
+                                        shell_res.set_heuristic(6, "AL_PEEPDF_6")
+                                        score_modifier += shell_score
+
+                            if score_modifier > 0:
+                                res_list.append(cur_res)
+
+                        elif cur_obj.type == "stream":
+                            if cur_obj.isEncodedStream and cur_obj.filter is not None:
+                                data = cur_obj.decodedStream
+                                encoding = cur_obj.filter.value.replace("[", "").replace("]", "").replace("/",
+                                                                                                          "").strip()
+                                val = cur_obj.rawValue
+                                otype = cur_obj.elements.get("/Type", None)
+                                sub_type = cur_obj.elements.get("/Subtype", None)
+                                length = cur_obj.elements.get("/Length", None)
+
+                            else:
+                                data = cur_obj.rawStream
+                                encoding = None
+                                val = cur_obj.rawValue
+                                otype = cur_obj.elements.get("/Type", None)
+                                sub_type = cur_obj.elements.get("/Subtype", None)
+                                length = cur_obj.elements.get("/Length", None)
+
+                            if otype:
+                                otype = otype.value.replace("/", "").lower()
+                            if sub_type:
+                                sub_type = sub_type.value.replace("/", "").lower()
+                            if length:
+                                length = length.value
+
+                            if otype == "embeddedfile":
+                                if len(data) > 4096:
+                                    # TODO: we might have to be smarter here.
+                                    if otype is not None:
+                                        otype_str = f"(Type: {otype})"
+                                    else:
+                                        otype_str = ""
+                                    if sub_type is not None:
+                                        sub_type_str = f"(SubType: {sub_type})"
+                                    else:
+                                        sub_type_str = ""
+                                    if encoding is not None:
+                                        encoding_str = f"(Encoded with {encoding})"
+                                        temp_encoding_str = f"_{encoding}"
+                                    else:
+                                        encoding_str = ""
+                                        temp_encoding_str = ""
+                                    cur_res = ResultSection(f'Embedded file found ({length} bytes) [obj: {obj} {version}]'
+                                                                           f' and dumped for analysis {otype_str}{sub_type_str}{encoding_str}')
+
+                                    temp_path_name = f"EmbeddedFile_{obj}{temp_encoding_str}.obj"
+                                    temp_path = os.path.join(self.working_directory, temp_path_name)
+                                    f = open(temp_path, "wb")
+                                    f.write(data)
+                                    f.close()
+                                    f_list.append(temp_path)
+
+                                    cur_res.add_line(["The EmbeddedFile object was saved as ", temp_path_name])
+                                    res_list.append(cur_res)
+
+                            elif otype not in BANNED_TYPES:
+                                cur_res = ResultSection(f'Unknown stream found [obj: {obj} {version}] {otype_str}{sub_type_str}{encoding_str}')
+                                for line in val.splitlines():
+                                    cur_res.add_line(line)
+
+                                emb_res = ResultSection('First 256 bytes', parent=cur_res)
+                                emb_res.set_body(hexdump(data[:256]), BODY_FORMAT.MEMORY_DUMP)
+                                res_list.append(cur_res)
+                        else:
+                            pass
+
+                file_res.add_section(res)
+
+                for results in res_list:
+                    file_res.add_section(results)
+
+                if js_dump:
+                    js_dump_res = ResultSection('Full Javascript dump')
+
+                    temp_js_dump = "javascript_dump.js"
+                    temp_js_dump_path = os.path.join(self.working_directory, temp_js_dump)
+                    try:
+                        temp_js_dump_bin = "\n\n----\n\n".join(js_dump).encode("utf-8")
+                    except UnicodeDecodeError:
+                        temp_js_dump_bin = "\n\n----\n\n".join(js_dump)
+                    temp_js_dump_sha1 = hashlib.sha1(temp_js_dump_bin).hexdigest()
+                    f = open(temp_js_dump_path, "wb")
+                    f.write(temp_js_dump_bin)
+                    f.flush()
+                    f.close()
+                    f_list.append(temp_js_dump_path)
+
+                    js_dump_res.add_line(["The javascript dump was saved as ", temp_js_dump])
+                    js_dump_res.add_line(["The sha1 for the javascript dump is ", temp_js_dump_sha1])
+
+                    js_dump_res.add_tag('PDF_JAVASCRIPT_SHA1', temp_js_dump_sha1, 100,
+                                     usage='CORRELATION')
+                    file_res.add_section(js_dump_res)
+
+                for filename in f_list:
+                    request.add_extracted(filename, f"Dumped from {os.path.basename(temp_filename)}")
+
+            else:
+                res = ResultSection("ERROR: Could not parse file with peepdf.")
+                file_res.add_section(res)
+        finally:
+            request.result = file_res
+            try:
+                del pdf_file
+            except:
+                pass
+
+            try:
+                del pdf_parser
+            except:
+                pass
+
+            gc.collect()

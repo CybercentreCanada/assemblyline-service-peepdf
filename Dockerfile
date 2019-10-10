@@ -1,6 +1,6 @@
 FROM cccs/assemblyline-v4-service-base:latest
 
-ENV SERVICE_PATH peepdf_al.PeePDF
+ENV SERVICE_PATH peepdf.peepdf.PeePDF
 
 # Switch to assemblyline user
 USER assemblyline
