@@ -4,7 +4,7 @@ description: >-
   This service uses the Python PeePDF library information from PDFs including JavaScript
   blocks which it will attempt to deobfuscate, if necessary, for further analysis.
 
-accepts: .pdf|.xml
+accepts: (document/pdf|code/xml)
 
 stage: CORE
 category: Static Analysis
@@ -22,81 +22,72 @@ supported_platforms: [linux]
 heuristics:
   - heur_id: 1
     name: Embedded PDF in XDP
-    filetype: pdf
+    filetype: document/pdf
     score: 1
-    attack_id: AL_PEEPDF_1
     description: >-
       If there is the <chunk> tag in the PDF file contents, there is an embedded PDF in the XDP.
 
   - heur_id: 2
-    filetype: pdf
+    filetype: document/pdf
     name: Large Buffers
     score: 500
-    attack_id: AL_PEEPDF_2
     description: >-
       A buffer was found in the JavaScript code.
 
   - heur_id: 3
-    filetype: pdf
+    filetype: document/pdf
     name: Contains eval
     score: 100
-    attack_id: AL_PEEPDF_3
     description: >-
       The eval() function is found in the javascript block. This is
       commonly used to launch deofuscated javascript code.
 
   - heur_id: 4
-    filetype: pdf
+    filetype: document/pdf
     name: Contains unescape
     score: 100
-    attack_id: AL_PEEPDF_4
     description: >-
       The unescape() function is found in the javascript block. Malware
       could use this to deobfuscate code blocks.
 
   - heur_id: 5
-    filetype: pdf
+    filetype: document/pdf
     name: JavaScript Shellcode
     score: 0
-    attack_id: AL_PEEPDF_5
     description: >-
       Hidden shellcode found inside unescaped bytes.
 
   - heur_id: 6
-    filetype: pdf
+    filetype: document/pdf
     name: Unescaped JavaScript Buffer
     score: 500
-    attack_id: AL_PEEPDF_6
     description: >-
       If looking for JavaScript shellcode fails, the JavaScript is an
       unknown unescaped buffer.
 
   - heur_id: 7
-    filetype: pdf
+    filetype: document/pdf
     name: Suspicious JavaScript Code
     score: 50
-    attack_id: AL_PEEPDF_7
     description: >-
       If the file contents of the PDF has either "eval" or "unescape" or
       large buffer variables were found.
 
   - heur_id: 8
-    filetype: pdf
+    filetype: document/pdf
     name: Suspicious JavaScript Elements
     score: 100
-    attack_id: AL_PEEPDF_8
     description: >-
       Suspicious JavaScript elements have been found within the file.
 
   - heur_id: 9
     name: Contains URL(s)
     score: 50
-    attack_id: AL_PEEPDF_9
-    filetype: pdf
+    filetype: document/pdf
     description: >-
       URL(s) have been found within the file.
 
 docker_config:
-  image: cccs/assemblyline-v4-service-base:latest
+  image: cccs/assemblyline-service-peepdf:latest
   cpu_cores: 0.5
   ram_mb: 512
