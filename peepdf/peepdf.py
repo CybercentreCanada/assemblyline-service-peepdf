@@ -237,7 +237,7 @@ class PeePDF(ServiceBase):
 
                 for version in range(len(stats_dict['Versions'])):
                     stats_version = stats_dict['Versions'][version]
-                    res_version = ResultSection('Version ' + str(version), parent=res)
+                    res_version = ResultSection(f"Version {str(version)}", parent=res)
                     if stats_version['Catalog'] is not None:
                         res_version.add_line(f"Catalog: {stats_version['Catalog']}")
                     else:
@@ -283,11 +283,11 @@ class PeePDF(ServiceBase):
                         if events is not None:
                             for event in events:
                                 res_suspicious.add_line(f"{event}: {self.list_first_x(events[event])}")
-                                res_suspicious.set_heuristic(8)
+                            res_suspicious.set_heuristic(8)
                         if actions is not None:
                             for action in actions:
                                 res_suspicious.add_line(f"{action}: {self.list_first_x(actions[action])}")
-                                res_suspicious.set_heuristic(8)
+                            res_suspicious.set_heuristic(8)
                         if vulns is not None:
                             for vuln in vulns:
                                 if vuln in vulnsDict:
@@ -343,7 +343,7 @@ class PeePDF(ServiceBase):
 
                         if cur_obj.containsJScode:
                             cur_res = ResultSection(f"Object [{obj} {version}] contains {len(cur_obj.JSCode)} "
-                                                    f"block of Javascript")
+                                                    f"block of JavaScript")
                             score_modifier = 0
 
                             js_idx = 0
@@ -448,7 +448,7 @@ class PeePDF(ServiceBase):
                                         shell_score = 500
                                         temp_path_name = f"obj{obj}_unescaped_{sc_idx}.buff"
 
-                                        shell_res = ResultSection(f"Unknown unescaped {len(sc)} bytes javascript "
+                                        shell_res = ResultSection(f"Unknown unescaped {len(sc)} bytes JavaScript "
                                                                   f"buffer (id: {sc_idx}) was resubmitted as "
                                                                   f"{temp_path_name}. Here are the first 256 bytes.",
                                                                   parent=js_res)
@@ -460,7 +460,7 @@ class PeePDF(ServiceBase):
                                         f.close()
                                         f_list.append(temp_path)
 
-                                        cur_res.add_tag('file.behavior', "Unescaped Javascript Buffer")
+                                        cur_res.add_tag('file.behavior', "Unescaped JavaScript Buffer")
                                         shell_res.set_heuristic(6)
                                         score_modifier += shell_score
 
@@ -541,7 +541,7 @@ class PeePDF(ServiceBase):
                     file_res.add_section(results)
 
                 if js_dump:
-                    js_dump_res = ResultSection('Full Javascript dump')
+                    js_dump_res = ResultSection('Full JavaScript dump')
 
                     temp_js_dump = "javascript_dump.js"
                     temp_js_dump_path = os.path.join(self.working_directory, temp_js_dump)
