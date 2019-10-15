@@ -17,8 +17,6 @@ disable_cache: false
 
 licence_count: 0
 
-supported_platforms: [linux]
-
 heuristics:
   - heur_id: 1
     name: Embedded PDF in XDP
