@@ -31,28 +31,28 @@ import os
 import re
 import hashlib
 import traceback
-import peepdf.jsbeautifier as jsbeautifier
+import peepdf.ext.peepdf.jsbeautifier as jsbeautifier
 
 # Return a string on Py2 & Py3.
 from builtins import input
 
-from peepdf.PDFUtils import (
+from peepdf.ext.peepdf.PDFUtils import (
     getBytesFromFile, countArrayElements, clearScreen, hexToString,
     escapeRegExpString, vtcheck, countNonPrintableChars
 )
-from peepdf.PDFCrypto import xor
-from peepdf.JSAnalysis import isJavascript, analyseJS, Global, unescape
-from peepdf.PDFCore import (
+from peepdf.ext.peepdf.PDFCrypto import xor
+from peepdf.ext.peepdf.JSAnalysis import isJavascript, analyseJS, Global, unescape
+from peepdf.ext.peepdf.PDFCore import (
     PDFFile, PDFHexString, PDFDictionary, PDFNum, PDFName, PDFStream,
     PDFReference, PDFString, PDFArray, PDFBool, PDFNull, vulnsDict, PDFParser
 )
 
 from base64 import b64encode, b64decode
-from peepdf.PDFFilters import decodeStream, encodeStream
-from peepdf.jjdecode import JJDecoder
+from peepdf.ext.peepdf.PDFFilters import decodeStream, encodeStream
+from peepdf.ext.peepdf.jjdecode import JJDecoder
 
 try:
-    from peepdf.colorama import init, Fore, Style
+    from peepdf.ext.peepdf.colorama import init, Fore, Style
     COLORIZED_OUTPUT = True
 except:
     COLORIZED_OUTPUT = False

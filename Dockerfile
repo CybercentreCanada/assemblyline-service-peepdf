@@ -9,10 +9,6 @@ RUN apt-get update && apt-get install -y \
   libnspr4-dev \
   pkg-config
 
-RUN pip install \
-  nose \
-  python-spidermonkey
-
 # Switch to assemblyline user
 USER assemblyline
 

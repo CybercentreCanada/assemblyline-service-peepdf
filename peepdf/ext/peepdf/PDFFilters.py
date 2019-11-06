@@ -60,10 +60,10 @@ import zlib
 import struct
 import six
 
-import peepdf.lzw
+import peepdf.ext.peepdf.lzw
 
-from peepdf.PDFUtils import getNumsFromBytes, getBytesFromBits, getBitsFromNum
-from peepdf.ccitt import CCITTFax
+from peepdf.ext.peepdf.PDFUtils import getNumsFromBytes, getBytesFromBits, getBitsFromNum
+from peepdf.ext.peepdf.ccitt import CCITTFax
 
 
 def decodeStream(stream, filter, parameters={}):
@@ -365,7 +365,7 @@ def lzwDecode(stream, parameters):
     '''
     decodedStream = ''
     try:
-        decodedStream = peepdf.lzw.lzwdecode(stream)
+        decodedStream = peepdf.ext.peepdf.lzw.lzwdecode(stream)
     except:
         return (-1, 'Error decompressing string')
 
@@ -412,7 +412,7 @@ def lzwEncode(stream, parameters):
     encodedStream = ''
     if parameters is None or parameters == {}:
         try:
-            generator = peepdf.lzw.compress(stream)
+            generator = peepdf.ext.peepdf.lzw.compress(stream)
             for c in generator:
                 encodedStream += c
             return (0, encodedStream)
@@ -450,7 +450,7 @@ def lzwEncode(stream, parameters):
         else:
             output = stream
         try:
-            generator = peepdf.lzw.compress(output)
+            generator = peepdf.ext.peepdf.lzw.compress(output)
             for c in generator:
                 encodedStream += c
             return (0, encodedStream)

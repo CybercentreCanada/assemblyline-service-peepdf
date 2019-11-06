@@ -9,7 +9,7 @@
 # if detect(some_string):
 #     unpacked = unpack(some_string)
 #
-from peepdf.jsbeautifier.unpackers import UnpackingError
+from peepdf.ext.peepdf.jsbeautifier.unpackers import UnpackingError
 
 """Unpacker for Dean Edward's p.a.c.k.e.r"""
 

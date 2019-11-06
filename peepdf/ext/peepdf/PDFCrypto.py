@@ -31,7 +31,7 @@ import struct
 import random
 import warnings
 import sys
-import peepdf.aes
+import peepdf.ext.peepdf.aes
 import six
 
 warnings.filterwarnings("ignore")
@@ -82,12 +82,12 @@ def computeEncryptionKey(password, dictOwnerPass, dictUserPass, dictOE, dictUE, 
                 password = password.encode('utf-8')[:127]
                 kSalt = dictUserPass[40:48]
                 intermediateKey = hashlib.sha256(password + kSalt).digest()
-                ret = peepdf.aes.decryptData('\0'*16+dictUE, intermediateKey)
+                ret = peepdf.ext.peepdf.aes.decryptData('\0'*16+dictUE, intermediateKey)
             elif passwordType == 'OWNER':
                 password = password.encode('utf-8')[:127]
                 kSalt = dictOwnerPass[40:48]
                 intermediateKey = hashlib.sha256(password + kSalt + dictUserPass).digest()
-                ret = peepdf.aes.decryptData('\0'*16+dictOE, intermediateKey)
+                ret = peepdf.ext.peepdf.aes.decryptData('\0'*16+dictOE, intermediateKey)
             return ret
     except:
         return (-1, 'ComputeEncryptionKey error: %s %s' % (str(sys.exc_info()[0]), str(sys.exc_info()[1])))

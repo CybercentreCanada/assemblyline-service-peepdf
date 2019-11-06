@@ -7,7 +7,7 @@
 
 import pkgutil
 import re
-import peepdf.jsbeautifier.unpackers.evalbased as evalbased
+import peepdf.ext.peepdf.jsbeautifier.unpackers.evalbased as evalbased
 
 # NOTE: AT THE MOMENT, IT IS DEACTIVATED FOR YOUR SECURITY: it runs js!
 BLACKLIST = ['jsbeautifier.unpackers.evalbased']

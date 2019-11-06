@@ -25,13 +25,13 @@
     This module contains some functions to analyse Javascript code inside the PDF file
 '''
 
-import peepdf.jsbeautifier as jsbeautifier
+import peepdf.ext.peepdf.jsbeautifier as jsbeautifier
 import os
 import re
 import sys
 import traceback
 
-from peepdf.PDFUtils import unescapeHTMLEntities, escapeString
+from peepdf.ext.peepdf.PDFUtils import unescapeHTMLEntities, escapeString
 
 try:
     import PyV8

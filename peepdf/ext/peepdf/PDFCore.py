@@ -33,17 +33,17 @@ import sys
 import six
 import codecs
 
-import peepdf.aes as AES
-from peepdf.PDFUtils import (
+import peepdf.ext.peepdf.aes as AES
+from peepdf.ext.peepdf.PDFUtils import (
     encodeName, unescapeString, encodeString, escapeString, numToHex,
     numToString
 )
-from peepdf.PDFCrypto import (
+from peepdf.ext.peepdf.PDFCrypto import (
     RC4, computeObjectKey, computeUserPass, isUserPass, isOwnerPass,
     computeEncryptionKey, computeOwnerPass
 )
-from peepdf.JSAnalysis import isJavascript, analyseJS
-from peepdf.PDFFilters import decodeStream, encodeStream
+from peepdf.ext.peepdf.JSAnalysis import isJavascript, analyseJS
+from peepdf.ext.peepdf.PDFFilters import decodeStream, encodeStream
 
 MAL_ALL = 1
 MAL_HEAD = 2

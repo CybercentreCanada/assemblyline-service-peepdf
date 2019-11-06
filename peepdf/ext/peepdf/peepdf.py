@@ -29,14 +29,14 @@
 
 import sys, os, optparse, re, urllib2, datetime, hashlib, traceback
 from datetime import datetime
-from peepdf.PDFCore import PDFParser,vulnsDict
+from peepdf.ext.peepdf.PDFCore import PDFParser,vulnsDict
  
 import pylibemu
 
 EMU_MODULE = True
 
 try:
-	from peepdf.colorama import init, Fore, Back, Style
+	from peepdf.ext.peepdf.colorama import init, Fore, Back, Style
 	init()
 	COLORIZED_OUTPUT = True
 	warningColor = Fore.YELLOW

@@ -3,7 +3,7 @@ import getopt
 import re
 import string
 
-import peepdf.jsbeautifier.unpackers
+import peepdf.ext.peepdf.jsbeautifier.unpackers
 #
 # Originally written by Einar Lielmanis et al.,
 # Conversion to python by Einar Lielmanis, einar@jsbeautifier.org,
