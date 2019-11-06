@@ -351,7 +351,7 @@ class PeePDF(ServiceBase):
                                 sub_res = ResultSection('Block of JavaScript', parent=cur_res)
                                 js_idx += 1
                                 js_score = 0
-                                js_code, unescaped_bytes, _, _ = analyseJS(js)
+                                js_code, unescaped_bytes, _, _, _ = analyseJS(js)
 
                                 js_dump += [x for x in js_code]
 
@@ -563,7 +563,8 @@ class PeePDF(ServiceBase):
                     file_res.add_section(js_dump_res)
 
                 for filename in f_list:
-                    request.add_extracted(filename, f"Dumped from {os.path.basename(temp_filename)}")
+                    request.add_extracted(filename, os.path.basename(filename),
+                                          f"Dumped from {os.path.basename(temp_filename)}")
 
             else:
                 res = ResultSection("ERROR: Could not parse file with PeePDF.")
