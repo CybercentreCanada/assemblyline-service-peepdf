@@ -148,7 +148,7 @@ def analyseJS(code, context=None, manualAnalysis=False):
         for js in jsCode:
             if js is None or js == '':
                 jsCode.remove(js)
-    return [jsCode, unescapedBytes, urlsFound, errors, context]
+    return jsCode, unescapedBytes, urlsFound, errors, context
 
 
 def getVarContent(jsCode, varContent):
