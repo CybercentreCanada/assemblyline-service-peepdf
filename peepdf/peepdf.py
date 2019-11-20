@@ -66,7 +66,7 @@ class PeePDF(ServiceBase):
                     f = open(file_path, "wb")
                     f.write(un_b64)
                     f.close()
-                    request.add_extracted(file_path, f"UnXDP from {filename}")
+                    request.add_extracted(file_path, os.path.basename(file_path), f"UnXDP from {filename}")
 
             if chunk_number > 0:
                 self._report_embedded_xdp(file_res, chunk_number, cbin, leftover)
