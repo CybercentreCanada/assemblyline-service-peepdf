@@ -509,9 +509,15 @@ class PeePDF(ServiceBase):
                                     else:
                                         encoding_str = ""
                                         temp_encoding_str = ""
-                                    cur_res = ResultSection(f'Embedded file found ({length} bytes) '
-                                                            f'[obj: {obj} {version}] and dumped for analysis '
-                                                            f'{otype_str}{sub_type_str}{encoding_str}')
+
+                                    cur_res = ResultSection('Embedded file found (%s bytes) [obj: %s %s]'
+                                                                           ' and dumped for analysis %s%s%s' %
+                                                            (length, obj, version, {True: "(Type: %s) " % otype,
+                                                                                    False: ""}[otype is not None],
+                                                             {True: "(SubType: %s) " % sub_type,
+                                                              False: ""}[sub_type is not None],
+                                                             {True: "(Encoded with %s)" % encoding,
+                                                              False: ""}[encoding is not None]))
 
                                     temp_path_name = f"EmbeddedFile_{obj}{temp_encoding_str}.obj"
                                     temp_path = os.path.join(self.working_directory, temp_path_name)
@@ -524,8 +530,13 @@ class PeePDF(ServiceBase):
                                     res_list.append(cur_res)
 
                             elif otype not in BANNED_TYPES:
-                                cur_res = ResultSection(f"Unknown stream found [obj: "
-                                                        f"{obj} {version}] {otype_str}{sub_type_str}{encoding_str}")
+                                cur_res = ResultSection('Unknown stream found [obj: %s %s] %s%s%s' %
+                                                        (obj, version, {True: "(Type: %s) " % otype,
+                                                                        False: ""}[otype is not None],
+                                                         {True: "(SubType: %s) " % sub_type,
+                                                          False: ""}[sub_type is not None],
+                                                         {True: "(Encoded with %s)" % encoding,
+                                                          False: ""}[encoding is not None]))
                                 for line in val.splitlines():
                                     cur_res.add_line(line)
 
