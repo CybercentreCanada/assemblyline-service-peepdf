@@ -429,7 +429,7 @@ class PeePDF(ServiceBase):
                                             buff_res = ResultSection(
                                                 f"A {len(buff)} bytes buffer was found in the JavaScript "
                                                 f"block{buff_cond}. Here are the first 256 bytes.",
-                                                parent=js_res, body=hexdump(buff[:256]),
+                                                parent=js_res, body=hexdump(bytes(buff[:256])),
                                                 body_format=BODY_FORMAT.MEMORY_DUMP)
                                             buff_res.set_heuristic(2)
 
