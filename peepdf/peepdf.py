@@ -1,5 +1,6 @@
 import gc
 import hashlib
+import json
 import os
 import re
 from base64 import b64decode
@@ -190,14 +191,14 @@ class PeePDF(ServiceBase):
         if add_reminder:
             mylist.append("...")
 
-        return str(mylist)
+        return mylist
 
     # noinspection PyBroadException,PyUnboundLocalVariable
     def peepdf_analysis(self, temp_filename, file_content, request):
         file_res = Result()
         try:
             res_list = []
-            js_stream = []
+            # js_stream = []
             f_list = []
             js_dump = []
 
@@ -211,68 +212,64 @@ class PeePDF(ServiceBase):
                     # Not a PDF
                     return
 
-                res = ResultSection("PDF file information")
-                res.add_line(f"File: {stats_dict['File']}")
-                res.add_line(f"MD5: {stats_dict['MD5']}")
-                res.add_line(f"SHA1: {stats_dict['SHA1']}")
-                res.add_line(f"SHA256: {stats_dict['SHA256']}")
-                res.add_line(f"Size: {stats_dict['Size']} bytes")
-                res.add_line(f"Version: {stats_dict['Version']}")
-                res.add_line(f"Binary: {stats_dict['Binary']}")
-                res.add_line(f"Linearized: {stats_dict['Linearized']}")
-                res.add_line(f"Encrypted: {stats_dict['Encrypted']}")
+                json_body = dict(
+                    version=stats_dict['Version'],
+                    binary=stats_dict['Binary'],
+                    linearized=stats_dict['Linearized'],
+                    encrypted=stats_dict['Encrypted'],
+                )
+
                 if stats_dict['Encryption Algorithms']:
-                    temp = ' ('
+                    temp = []
                     for algorithmInfo in stats_dict['Encryption Algorithms']:
-                        temp += f"{algorithmInfo[0]} {str(algorithmInfo[1])} bits, "
-                    temp = temp[:-2] + ')'
-                    res.add_line(temp)
-                res.add_line(f"Updates: {stats_dict['Updates']}")
-                res.add_line(f"Objects: {stats_dict['Objects']}")
-                res.add_line(f"Streams: {stats_dict['Streams']}")
-                res.add_line(f"Comments: {stats_dict['Comments']}")
-                res.add_line("Errors: " + {True: ", ".join(stats_dict['Errors']),
-                                           False: "None"}[len(stats_dict['Errors']) != 0])
-                res.add_line("")
+                        temp.append(f"{algorithmInfo[0]} {str(algorithmInfo[1])} bits")
+                    json_body["encryption_algorithms"] = temp
+
+                json_body.update(dict(
+                    updates=stats_dict['Updates'],
+                    objects=stats_dict['Objects'],
+                    streams=stats_dict['Streams'],
+                    comments=stats_dict['Comments'],
+                    errors={True: ", ".join(stats_dict['Errors']),
+                            False: "None"}[len(stats_dict['Errors']) != 0]
+                ))
+                res = ResultSection("PDF File Information", body_format=BODY_FORMAT.KEY_VALUE,
+                                    body=json.dumps(json_body))
 
                 for version in range(len(stats_dict['Versions'])):
                     stats_version = stats_dict['Versions'][version]
-                    res_version = ResultSection(f"Version {str(version)}", parent=res)
-                    if stats_version['Catalog'] is not None:
-                        res_version.add_line(f"Catalog: {stats_version['Catalog']}")
-                    else:
-                        res_version.add_line('Catalog: No')
-                    if stats_version['Info'] is not None:
-                        res_version.add_line(f"Info: {stats_version['Info']}")
-                    else:
-                        res_version.add_line('Info: No')
-                    res_version.add_line(f"Objects ({stats_version['Objects'][0]}): "
-                                         f"{self.list_first_x(stats_version['Objects'][1])}")
+                    v_json_body = dict(
+                        catalog=stats_version['Catalog'] or "no",
+                        info=stats_version['Info'] or "no",
+                        objects=self.list_first_x(stats_version['Objects'][1]),
+                    )
+
                     if stats_version['Compressed Objects'] is not None:
-                        res_version.add_line(f"Compressed objects ({stats_version['Compressed Objects'][0]}): " 
-                                             f"{self.list_first_x(stats_version['Compressed Objects'][1])}")
+                        v_json_body['compressed_objects'] = self.list_first_x(stats_version['Compressed Objects'][1])
 
                     if stats_version['Errors'] is not None:
-                        res_version.add_line(f"Errors ({stats_version['Errors'][0]}): " 
-                                             f"{self.list_first_x(stats_version['Errors'][1])}")
-                    res_version.add_line(f"Streams ({stats_version['Streams'][0]}): "
-                                         f"{self.list_first_x(stats_version['Streams'][1])}")
+                        v_json_body['errors'] = self.list_first_x(stats_version['Errors'][1])
+
+                    v_json_body['streams'] = self.list_first_x(stats_version['Streams'][1])
+
                     if stats_version['Xref Streams'] is not None:
-                        res_version.add_line(f"Xref streams ({stats_version['Xref Streams'][0]}): "
-                                             f"{self.list_first_x(stats_version['Xref Streams'][1])}")
+                        v_json_body['xref_streams'] = self.list_first_x(stats_version['Xref Streams'][1])
+
                     if stats_version['Object Streams'] is not None:
-                        res_version.add_line(f"Object streams ({stats_version['Object Streams'][0]}): "
-                                             f"{self.list_first_x(stats_version['Object Streams'][1])}")
+                        v_json_body['object_streams'] = self.list_first_x(stats_version['Object Streams'][1])
+
                     if int(stats_version['Streams'][0]) > 0:
-                        res_version.add_line(f"Encoded ({stats_version['Encoded'][0]}): "
-                                             f"{self.list_first_x(stats_version['Encoded'][1])}")
+                        v_json_body['encoded'] = self.list_first_x(stats_version['Encoded'][1])
                         if stats_version['Decoding Errors'] is not None:
-                            res_version.add_line(f"Decoding errors ({stats_version['Decoding Errors'][0]}): "  
-                                                 f"{self.list_first_x(stats_version['Decoding Errors'][1])}")
+                            v_json_body['decoding_errors'] = self.list_first_x(stats_version['Decoding Errors'][1])
+
                     if stats_version['Objects with JS code'] is not None:
-                        res_version.add_line(f"Objects with JS code ({stats_version['Objects with JS code'][0]}): "
-                                             f"{self.list_first_x(stats_version['Objects with JS code'][1])}")
-                        js_stream.extend(stats_version['Objects with JS code'][1])
+                        v_json_body['objects_with_js_code'] = \
+                            self.list_first_x(stats_version['Objects with JS code'][1])
+                        # js_stream.extend(stats_version['Objects with JS code'][1])
+
+                    res_version = ResultSection(f"Version {str(version)}", parent=res,
+                                                body_format=BODY_FORMAT.KEY_VALUE, body=json.dumps(v_json_body))
 
                     actions = stats_version['Actions']
                     events = stats_version['Events']
