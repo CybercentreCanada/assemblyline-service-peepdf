@@ -88,5 +88,5 @@ heuristics:
 
 docker_config:
   image: cccs/assemblyline-service-peepdf:latest
-  cpu_cores: 0.5
+  cpu_cores: 1
   ram_mb: 512
