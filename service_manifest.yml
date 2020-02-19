@@ -87,6 +87,6 @@ heuristics:
       URL(s) have been found within the file.
 
 docker_config:
-  image: cccs/assemblyline-service-peepdf:latest
+  image: ${REGISTRY}cccs/assemblyline-service-peepdf:latest
   cpu_cores: 1
   ram_mb: 512
