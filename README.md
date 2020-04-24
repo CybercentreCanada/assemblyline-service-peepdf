@@ -33,19 +33,19 @@ The PeePDF service will report the following information for each file when pres
 
 ####Heuristics
 
-**AL_PeePDF_001**: Embedded PDF in XDP.
+**PeePDF.1**: Embedded PDF in XDP.
 
-**AL_PeePDF_002**: A buffer was found in the javascript code.
+**PeePDF.2**: A buffer was found in the javascript code.
 
-**AL_PeePDF_003**: The eval() function is found in the javascript block. 
+**PeePDF.3**: The eval() function is found in the javascript block. 
 
-**AL_PeePDF_004**: The unescape() function is found in the javascript block. 
+**PeePDF.4**: The unescape() function is found in the javascript block. 
 
-**AL_PeePDF_005**: Possible Javascript Shellcode.
+**PeePDF.5**: Possible Javascript Shellcode.
 
-**AL_PeePDF_006**: Unescaped Javascript Buffer.
+**PeePDF.6**: Unescaped Javascript Buffer.
 
-**AL_PeePDF_007**: Suspicious Javascript.
+**PeePDF.7**: Suspicious Javascript.
 
 ####Other Items of Interest
 

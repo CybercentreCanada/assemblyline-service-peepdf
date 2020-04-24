@@ -57,7 +57,7 @@ class PeePDF(ServiceBase):
                 # noinspection PyBroadException
                 try:
                     un_b64 = b64decode(chunk.split("</chunk>")[0])
-                except:
+                except Exception:
                     self.log.error("Found <pdf>, <document> and <chunk> tags inside an xdp file but could not "
                                    "un-base64 the content.")
 
@@ -117,9 +117,9 @@ class PeePDF(ServiceBase):
                     between, rest = between.split("//", 1)
                     try:
                         between = between.strip() + rest.split("\n", 1)[1].strip()
-                    except:
+                    except Exception:
                         pass
-                except:
+                except Exception:
                     pass
                 finally:
                     between = between.strip()
@@ -414,7 +414,7 @@ class PeePDF(ServiceBase):
                                                     f.write(buff)
                                                     f.close()
                                                     f_list.append(temp_path)
-                                                except:
+                                                except Exception:
                                                     self.log.error("Found 'data:;base64, ' buffer "
                                                                    "but failed to base64 decode.")
                                                     temp_path_name = None
@@ -439,7 +439,7 @@ class PeePDF(ServiceBase):
 
                                         try:
                                             sc = sc.decode("hex")
-                                        except:
+                                        except Exception:
                                             pass
 
                                         shell_score = 500
@@ -491,20 +491,9 @@ class PeePDF(ServiceBase):
 
                             if otype == "embeddedfile":
                                 if len(data) > 4096:
-                                    # TODO: we might have to be smarter here.
-                                    if otype is not None:
-                                        otype_str = f"(Type: {otype})"
-                                    else:
-                                        otype_str = ""
-                                    if sub_type is not None:
-                                        sub_type_str = f"(SubType: {sub_type})"
-                                    else:
-                                        sub_type_str = ""
                                     if encoding is not None:
-                                        encoding_str = f"(Encoded with {encoding})"
                                         temp_encoding_str = f"_{encoding}"
                                     else:
-                                        encoding_str = ""
                                         temp_encoding_str = ""
 
                                     cur_res = ResultSection(
@@ -578,12 +567,12 @@ class PeePDF(ServiceBase):
             request.result = file_res
             try:
                 del pdf_file
-            except:
+            except Exception:
                 pass
 
             try:
                 del pdf_parser
-            except:
+            except Exception:
                 pass
 
             gc.collect()
