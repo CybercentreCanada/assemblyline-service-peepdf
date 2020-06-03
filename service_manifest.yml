@@ -1,5 +1,5 @@
 name: PeePDF
-version: 1
+version: $SERVICE_TAG
 description: >-
   This service uses the Python PeePDF library information from PDFs including JavaScript
   blocks which it will attempt to deobfuscate, if necessary, for further analysis.
@@ -87,6 +87,6 @@ heuristics:
       URL(s) have been found within the file.
 
 docker_config:
-  image: ${REGISTRY}cccs/assemblyline-service-peepdf:latest
+  image: ${REGISTRY}cccs/assemblyline-service-peepdf:$SERVICE_TAG
   cpu_cores: 1
   ram_mb: 512
