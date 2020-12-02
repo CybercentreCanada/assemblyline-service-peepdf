@@ -293,17 +293,17 @@ class PeePDF(ServiceBase):
                                     for vulnCVE in vulnsDict[vuln]:
                                         if len(temp) != 2:
                                             temp.append(',')
-                                        temp.append(vulnCVE)
-                                        cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE) \
-                                            if isinstance(vulnCVE, str) else False
-                                        if cve_found:
-                                            res_suspicious.add_tag('attribution.exploit',
-                                                                   vulnCVE[cve_found.start():cve_found.end()])
-                                            res_suspicious.add_tag('file.behavior',
-                                                                   vulnCVE[cve_found.start():cve_found.end()])
+                                            vulnCVE = "".join(vulnCVE) if isinstance(vulnCVE, list) else vulnCVE
+                                            temp.append(vulnCVE)
+                                            cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE)
+                                            if cve_found:
+                                                res_suspicious.add_tag('attribution.exploit',
+                                                                       vulnCVE[cve_found.start():cve_found.end()])
+                                                res_suspicious.add_tag('file.behavior',
+                                                                       vulnCVE[cve_found.start():cve_found.end()])
                                     temp.append('): ')
                                     temp.append(str(vulns[vuln]))
-                                    res_suspicious.add_line("".join(temp))
+                                    res_suspicious.add_line(temp)
                                 else:
                                     res_suspicious.add_line(f"{vuln}: {str(vulns[vuln])}")
                                 is_suspicious = True
@@ -314,6 +314,7 @@ class PeePDF(ServiceBase):
                                     for vulnCVE in vulnsDict[element]:
                                         if len(temp) != 2:
                                             temp.append(',')
+                                        vulnCVE = "".join(vulnCVE) if isinstance(vulnCVE, list) else vulnCVE
                                         temp.append(vulnCVE)
                                         cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE) \
                                             if isinstance(vulnCVE, str) else False
