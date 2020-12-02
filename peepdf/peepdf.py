@@ -275,16 +275,17 @@ class PeePDF(ServiceBase):
                     events = stats_version['Events']
                     vulns = stats_version['Vulns']
                     elements = stats_version['Elements']
+                    is_suspicious = False
                     if events is not None or actions is not None or vulns is not None or elements is not None:
                         res_suspicious = ResultSection('Suspicious elements', parent=res_version)
                         if events is not None:
                             for event in events:
                                 res_suspicious.add_line(f"{event}: {self.list_first_x(events[event])}")
-                            res_suspicious.set_heuristic(8)
+                            is_suspicious = True
                         if actions is not None:
                             for action in actions:
                                 res_suspicious.add_line(f"{action}: {self.list_first_x(actions[action])}")
-                            res_suspicious.set_heuristic(8)
+                            is_suspicious = True
                         if vulns is not None:
                             for vuln in vulns:
                                 if vuln in vulnsDict:
@@ -293,7 +294,8 @@ class PeePDF(ServiceBase):
                                         if len(temp) != 2:
                                             temp.append(',')
                                         temp.append(vulnCVE)
-                                        cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE)
+                                        cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE) \
+                                            if isinstance(vulnCVE, str) else False
                                         if cve_found:
                                             res_suspicious.add_tag('attribution.exploit',
                                                                    vulnCVE[cve_found.start():cve_found.end()])
@@ -304,7 +306,7 @@ class PeePDF(ServiceBase):
                                     res_suspicious.add_line(temp)
                                 else:
                                     res_suspicious.add_line(f"{vuln}: {str(vulns[vuln])}")
-                                res_suspicious.set_heuristic(8)
+                                is_suspicious = True
                         if elements is not None:
                             for element in elements:
                                 if element in vulnsDict:
@@ -313,7 +315,8 @@ class PeePDF(ServiceBase):
                                         if len(temp) != 2:
                                             temp.append(',')
                                         temp.append(vulnCVE)
-                                        cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE)
+                                        cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE) \
+                                            if isinstance(vulnCVE, str) else False
                                         if cve_found:
                                             res_suspicious.add_tag('attribution.exploit',
                                                                    vulnCVE[cve_found.start():cve_found.end()])
@@ -322,10 +325,11 @@ class PeePDF(ServiceBase):
                                     temp.append('): ')
                                     temp.append(str(elements[element]))
                                     res_suspicious.add_line(temp)
-                                    res_suspicious.set_heuristic(8)
+                                    is_suspicious = True
                                 else:
                                     res_suspicious.add_line(f"\t\t{element}: {str(elements[element])}")
-                                    res_suspicious.set_heuristic(8)
+                                    is_suspicious = True
+                    res_suspicious.set_heuristic(8) if is_suspicious else None
 
                     urls = stats_version['URLs']
                     if urls is not None:
