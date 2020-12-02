@@ -530,9 +530,8 @@ class PeePDF(ServiceBase):
                                 emb_res = ResultSection('First 256 bytes', parent=cur_res)
                                 first_256 = data[:256]
                                 if isinstance(first_256, str):
-                                    emb_res.set_body(hexdump(first_256.encode()), BODY_FORMAT.MEMORY_DUMP)
-                                else:
-                                    emb_res.set_body(hexdump(first_256), BODY_FORMAT.MEMORY_DUMP)
+                                    first_256 = first_256.encode()
+                                emb_res.set_body(hexdump(first_256), BODY_FORMAT.MEMORY_DUMP)
                                 res_list.append(cur_res)
                         else:
                             pass
