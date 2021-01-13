@@ -510,6 +510,8 @@ class PeePDF(ServiceBase):
                                     temp_path_name = f"EmbeddedFile_{obj}{temp_encoding_str}.obj"
                                     temp_path = os.path.join(self.working_directory, temp_path_name)
                                     f = open(temp_path, "wb")
+                                    if isinstance(data, str):
+                                        data = data.encode()
                                     f.write(data)
                                     f.close()
                                     f_list.append(temp_path)
