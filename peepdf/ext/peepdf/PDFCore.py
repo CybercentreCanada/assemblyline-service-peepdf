@@ -146,10 +146,7 @@ class PDFObject:
         value = str(self.value)
         rawValue = str(self.rawValue)
         encValue = str(self.encryptedValue)
-        if re.findall(string, value, re.IGNORECASE) != [] or re.findall(string, rawValue,
-                                                                        re.IGNORECASE) != [] or re.findall(string,
-                                                                                                           encValue,
-                                                                                                           re.IGNORECASE) != []:
+        if re.findall(string, value, re.IGNORECASE) != [] or re.findall(string, rawValue, re.IGNORECASE) != [] or re.findall(string, encValue, re.IGNORECASE) != []:
             return True
         if self.containsJS():
             for js in self.JSCode:
