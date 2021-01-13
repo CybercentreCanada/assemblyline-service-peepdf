@@ -4884,7 +4884,7 @@ class PDFFile:
             objectStream = PDFObjectStream('', compressedStream, compressedDict, {}, {})
         except Exception as e:
             errorMessage = 'Error creating PDFObjectStream'
-            if e.message != '':
+            if hasattr(e, 'message') and e.message:
                 errorMessage += ': ' + e.message
             self.addError(errorMessage)
             return (-1, errorMessage)
@@ -4995,7 +4995,7 @@ class PDFFile:
             xrefStream = PDFStream('', stream, elementsDict, {})
         except Exception as e:
             errorMessage = 'Error creating PDFStream'
-            if e.message != '':
+            if hasattr(e, 'message') and e.message:
                 errorMessage += ': ' + e.message
             self.addError(errorMessage)
             return (-1, errorMessage)
@@ -5013,7 +5013,7 @@ class PDFFile:
             trailerStream = PDFTrailer(PDFDictionary(elements=elementsTrailerDict))
         except Exception as e:
             errorMessage = 'Error creating PDFTrailer'
-            if e.message != '':
+            if hasattr(e, 'message') and e.message:
                 errorMessage += ': ' + e.message
             self.addError(errorMessage)
             return (-1, errorMessage)
@@ -5022,7 +5022,7 @@ class PDFFile:
             trailerSection = PDFTrailer(PDFDictionary(elements=dict(elementsTrailerDict)))  # PDFDictionary())
         except Exception as e:
             errorMessage = 'Error creating PDFTrailer'
-            if e.message != '':
+            if hasattr(e, 'message') and e.message:
                 errorMessage += ': ' + e.message
             self.addError(errorMessage)
             return (-1, errorMessage)
@@ -6517,7 +6517,7 @@ class PDFFile:
                 jsStream = PDFStream(rawStream=content, elements={'/Length': PDFNum(str(len(content)))})
             except Exception as e:
                 errorMessage = 'Error creating PDFStream'
-                if e.message != '':
+                if hasattr(e, 'message') and e.message:
                     errorMessage += ': ' + e.message
                 return (-1, errorMessage)
             ret = jsStream.setElement('/Filter', PDFName('FlateDecode'))
@@ -7401,7 +7401,7 @@ class PDFParser:
             pdfDictionary = PDFDictionary(rawContent, elements, rawNames)
         except Exception as e:
             errorMessage = 'Error creating PDFDictionary'
-            if e.message != '':
+            if hasattr(e, 'message') and e.message:
                 errorMessage += ': ' + e.message
             return (-1, errorMessage)
         self.charCounter = realCounter
@@ -7463,7 +7463,7 @@ class PDFParser:
                 pdfStream = PDFObjectStream(dict, stream, elements, rawNames, {})
             except Exception as e:
                 errorMessage = 'Error creating PDFObjectStream'
-                if e.message != '':
+                if hasattr(e, 'message') and e.message:
                     errorMessage += ': ' + e.message
                 return (-1, errorMessage)
         else:
@@ -7471,7 +7471,7 @@ class PDFParser:
                 pdfStream = PDFStream(dict, stream, elements, rawNames)
             except Exception as e:
                 errorMessage = 'Error creating PDFStream'
-                if e.message != '':
+                if hasattr(e, 'message') and e.message:
                     errorMessage += ': ' + e.message
                 return (-1, errorMessage)
         self.charCounter = realCounter
@@ -7713,7 +7713,7 @@ class PDFParser:
                 trailer = PDFTrailer(dict, streamPresent=streamPresent)
             except Exception as e:
                 errorMessage = 'Error creating PDFTrailer'
-                if e.message != '':
+                if hasattr(e, 'message') and e.message:
                     errorMessage += ': ' + e.message
                 return (-1, errorMessage)
         else:
@@ -7730,7 +7730,7 @@ class PDFParser:
                 trailer = PDFTrailer(dict, lastXrefSection, streamPresent=streamPresent)
             except Exception as e:
                 errorMessage = 'Error creating PDFTrailer'
-                if e.message != '':
+                if hasattr(e, 'message') and e.message:
                     errorMessage += ': ' + e.message
                 return (-1, errorMessage)
         trailer.setOffset(offset)
@@ -7767,7 +7767,7 @@ class PDFParser:
                         dict = None
                     else:
                         errorMessage = 'Error creating PDFDictionary'
-                        if e.message != '':
+                        if hasattr(e, 'message') and e.message:
                             errorMessage += ': ' + e.message
                         return (-1, errorMessage)
                 if not isinstance(rawContent, str):
@@ -7793,7 +7793,7 @@ class PDFParser:
                     trailer = PDFTrailer(dict, lastXrefSection)
                 except Exception as e:
                     errorMessage = 'Error creating PDFTrailer'
-                    if e.message != '':
+                    if hasattr(e, 'message') and e.message:
                         errorMessage += ': ' + e.message
                     return (-1, errorMessage)
                 trailer.setXrefStreamObject(indirectObject.getId())
