@@ -64,9 +64,8 @@ class PeePDF(ServiceBase):
                 if un_b64:
                     new_filename = f"xdp_{chunk_number}.pdf"
                     file_path = os.path.join(self.working_directory, new_filename)
-                    f = open(file_path, "wb")
-                    f.write(un_b64)
-                    f.close()
+                    with open(file_path, "wb") as f:
+                        f.write(un_b64)
                     request.add_extracted(file_path, os.path.basename(file_path), f"UnXDP from {filename}")
 
             if chunk_number > 0:
@@ -154,9 +153,7 @@ class PeePDF(ServiceBase):
         # eval
         temp_eval = data.split("eval")
         if len(temp_eval) > 1:
-            idx = 0
-            for i in temp_eval[:-1]:
-                idx += 1
+            for idx, i in enumerate(temp_eval[:-1]):
                 if (97 <= ord(i[-1]) <= 122) or (65 <= ord(i[-1]) <= 90):
                     continue
                 if (97 <= ord(temp_eval[idx][0]) <= 122) or \
@@ -169,9 +166,7 @@ class PeePDF(ServiceBase):
         # unescape
         temp_unesc = data.split("unescape")
         if len(temp_unesc) > 1:
-            idx = 0
-            for i in temp_unesc[:-1]:
-                idx += 1
+            for idx, i in enumerate(temp_unesc[:-1]):
                 if (97 <= ord(i[-1]) <= 122) or (65 <= ord(i[-1]) <= 90):
                     continue
                 if (97 <= ord(temp_unesc[idx][0]) <= 122) or \
@@ -345,44 +340,34 @@ class PeePDF(ServiceBase):
                         if cur_obj.containsJScode:
                             cur_res = ResultSection(f"Object [{obj} {version}] contains {len(cur_obj.JSCode)} "
                                                     f"block of JavaScript")
-                            score_modifier = 0
+                            has_results = False
 
-                            js_idx = 0
-                            for js in cur_obj.JSCode:
+                            for js_idx, js in enumerate(cur_obj.JSCode):
                                 sub_res = ResultSection('Block of JavaScript', parent=cur_res)
-                                js_idx += 1
-                                js_score = 0
                                 js_code, unescaped_bytes, _, _, _ = analyseJS(js)
 
-                                js_dump += [x for x in js_code]
+                                js_dump += js_code
 
                                 # Malicious characteristics
                                 big_buffs = self.get_big_buffs("".join(js_code))
-                                if len(big_buffs) == 1:
-                                    js_score += 500 * len(big_buffs)
-                                if len(big_buffs) > 0:
-                                    js_score += 500 * len(big_buffs)
                                 has_eval, has_unescape = self.check_dangerous_func("".join(js_code))
-                                if has_unescape:
-                                    js_score += 100
-                                if has_eval:
-                                    js_score += 100
+                                has_js_results = has_eval or has_unescape or len(big_buffs) > 0
+
 
                                 js_cmt = ""
-                                if has_eval or has_unescape or len(big_buffs) > 0:
-                                    score_modifier += js_score
+                                if has_js_results:
+                                    has_results = True
                                     js_cmt = "Suspiciously malicious "
                                     cur_res.add_tag('file.behavior', "Suspicious JavaScript in PDF")
                                     sub_res.set_heuristic(7)
                                 js_res = ResultSection(f"{js_cmt}JavaScript Code (block: {js_idx})", parent=sub_res)
 
-                                if js_score > 0:
+                                if has_js_results:
                                     temp_js_outname = f"object{obj}-{version}_{js_idx}.js"
                                     temp_js_path = os.path.join(self.working_directory, temp_js_outname)
                                     temp_js_bin = "".join(js_code).encode("utf-8")
-                                    f = open(temp_js_path, "wb")
-                                    f.write(temp_js_bin)
-                                    f.close()
+                                    with open(temp_js_path, "wb") as f:
+                                        f.write(temp_js_bin)
                                     f_list.append(temp_js_path)
 
                                     js_res.add_line(f"The JavaScript block was saved as {temp_js_outname}")
@@ -400,9 +385,7 @@ class PeePDF(ServiceBase):
                                                                   "deobfuscate code blocks.")
                                             analysis_res.set_heuristic(3)
 
-                                    buff_idx = 0
-                                    for buff in big_buffs:
-                                        buff_idx += 1
+                                    for buff_idx, buff in enumerate(big_buffs):
                                         error, new_buff = unescape(buff)
                                         if error == 0:
                                             buff = new_buff
@@ -414,9 +397,8 @@ class PeePDF(ServiceBase):
                                                 try:
                                                     buff = b64decode(buff.split(";base64,")[1].strip())
                                                     temp_path = os.path.join(self.working_directory, temp_path_name)
-                                                    f = open(temp_path, "wb")
-                                                    f.write(buff)
-                                                    f.close()
+                                                    with open(temp_path, "wb") as f:
+                                                        f.write(buff)
                                                     f_list.append(temp_path)
                                                 except Exception:
                                                     self.log.error("Found 'data:;base64, ' buffer "
@@ -434,38 +416,30 @@ class PeePDF(ServiceBase):
                                                 body_format=BODY_FORMAT.MEMORY_DUMP)
                                             buff_res.set_heuristic(2)
 
-                                processed_sc = []
-                                sc_idx = 0
-                                for sc in unescaped_bytes:
-                                    if sc not in processed_sc:
-                                        sc_idx += 1
-                                        processed_sc.append(sc)
+                                for sc_idx, sc in enumerate(set(unescaped_bytes)):
+                                    try:
+                                        sc = sc.decode("hex")
+                                    except Exception:
+                                        pass
 
-                                        try:
-                                            sc = sc.decode("hex")
-                                        except Exception:
-                                            pass
+                                    temp_path_name = f"obj{obj}_unescaped_{sc_idx}.buff"
 
-                                        shell_score = 500
-                                        temp_path_name = f"obj{obj}_unescaped_{sc_idx}.buff"
+                                    shell_res = ResultSection(f"Unknown unescaped {len(sc)} bytes JavaScript "
+                                                              f"buffer (id: {sc_idx}) was resubmitted as "
+                                                              f"{temp_path_name}. Here are the first 256 bytes.",
+                                                              parent=js_res)
+                                    shell_res.set_body(hexdump(sc[:256]), body_format=BODY_FORMAT.MEMORY_DUMP)
 
-                                        shell_res = ResultSection(f"Unknown unescaped {len(sc)} bytes JavaScript "
-                                                                  f"buffer (id: {sc_idx}) was resubmitted as "
-                                                                  f"{temp_path_name}. Here are the first 256 bytes.",
-                                                                  parent=js_res)
-                                        shell_res.set_body(hexdump(sc[:256]), body_format=BODY_FORMAT.MEMORY_DUMP)
-
-                                        temp_path = os.path.join(self.working_directory, temp_path_name)
-                                        f = open(temp_path, "wb")
+                                    temp_path = os.path.join(self.working_directory, temp_path_name)
+                                    with open(temp_path, "wb") as f:
                                         f.write(sc)
-                                        f.close()
-                                        f_list.append(temp_path)
+                                    f_list.append(temp_path)
 
-                                        cur_res.add_tag('file.behavior', "Unescaped JavaScript Buffer")
-                                        shell_res.set_heuristic(6)
-                                        score_modifier += shell_score
+                                    cur_res.add_tag('file.behavior', "Unescaped JavaScript Buffer")
+                                    shell_res.set_heuristic(6)
+                                    has_results = True
 
-                            if score_modifier > 0:
+                            if has_results:
                                 res_list.append(cur_res)
 
                         elif cur_obj.type == "stream":
@@ -509,9 +483,8 @@ class PeePDF(ServiceBase):
 
                                     temp_path_name = f"EmbeddedFile_{obj}{temp_encoding_str}.obj"
                                     temp_path = os.path.join(self.working_directory, temp_path_name)
-                                    f = open(temp_path, "wb")
-                                    f.write(data)
-                                    f.close()
+                                    with open(temp_path, "wb") as f:
+                                        f.write(data)
                                     f_list.append(temp_path)
 
                                     cur_res.add_line(f"The EmbeddedFile object was saved as {temp_path_name}")
@@ -551,10 +524,8 @@ class PeePDF(ServiceBase):
                     except UnicodeDecodeError:
                         temp_js_dump_bin = "\n\n----\n\n".join(js_dump)
                     temp_js_dump_sha1 = hashlib.sha1(temp_js_dump_bin).hexdigest()
-                    f = open(temp_js_dump_path, "wb")
-                    f.write(temp_js_dump_bin)
-                    f.flush()
-                    f.close()
+                    with open(temp_js_dump_path, "wb") as f:
+                        f.write(temp_js_dump_bin)
                     f_list.append(temp_js_dump_path)
 
                     js_dump_res.add_line(f"The JavaScript dump was saved as {temp_js_dump}")
