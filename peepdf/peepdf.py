@@ -359,7 +359,6 @@ class PeePDF(ServiceBase):
                                     has_results = True
                                     js_cmt = "Suspiciously malicious "
                                     cur_res.add_tag('file.behavior', "Suspicious JavaScript in PDF")
-                                    sub_res.set_heuristic(7)
                                 js_res = ResultSection(f"{js_cmt}JavaScript Code (block: {js_idx})", parent=sub_res)
 
                                 if has_js_results:
@@ -383,7 +382,7 @@ class PeePDF(ServiceBase):
                                                                   "function. It may be legitimate but it is definitely "
                                                                   "suspicious since malware often use this to "
                                                                   "deobfuscate code blocks.")
-                                            analysis_res.set_heuristic(3)
+                                            analysis_res.set_heuristic(4)
 
                                     for buff_idx, buff in enumerate(big_buffs):
                                         error, new_buff = unescape(buff)

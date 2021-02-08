@@ -64,14 +64,6 @@ heuristics:
       If looking for JavaScript shellcode fails, the JavaScript is an
       unknown unescaped buffer.
 
-  - heur_id: 7
-    filetype: document/pdf
-    name: Suspicious JavaScript Code
-    score: 50
-    description: >-
-      If the file contents of the PDF has either "eval" or "unescape" or
-      large buffer variables were found.
-
   - heur_id: 8
     filetype: document/pdf
     name: Suspicious JavaScript Elements
