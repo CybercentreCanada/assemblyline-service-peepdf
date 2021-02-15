@@ -378,6 +378,7 @@ class PeePDF(ServiceBase):
                                                                   "deobfuscate code blocks.")
                                             analysis_res.set_heuristic(4)
 
+                                    buff_heuristic_set = False
                                     for buff_idx, buff in enumerate(big_buffs):
                                         error, new_buff = unescape(buff)
                                         if error == 0:
@@ -407,7 +408,9 @@ class PeePDF(ServiceBase):
                                                 f"block{buff_cond}. Here are the first 256 bytes.",
                                                 parent=js_res, body=hexdump(bytes(buff[:256], "utf-8")),
                                                 body_format=BODY_FORMAT.MEMORY_DUMP)
-                                            buff_res.set_heuristic(2)
+                                            if not buff_heuristic_set:
+                                                js_res.set_heuristic(2)
+                                                buff_heuristic_set = True
 
                                 for sc_idx, sc in enumerate(set(unescaped_bytes)):
                                     try:

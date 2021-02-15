@@ -29,7 +29,7 @@ heuristics:
   - heur_id: 2
     filetype: document/pdf
     name: Large Buffers
-    score: 500
+    score: 100
     description: >-
       A buffer was found in the JavaScript code.
 
