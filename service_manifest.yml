@@ -67,7 +67,7 @@ heuristics:
   - heur_id: 8
     filetype: document/pdf
     name: Suspicious JavaScript Elements
-    score: 100
+    score: 0
     description: >-
       Suspicious JavaScript elements have been found within the file.
 

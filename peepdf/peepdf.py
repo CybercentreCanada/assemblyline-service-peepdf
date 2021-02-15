@@ -216,8 +216,8 @@ class PeePDF(ServiceBase):
 
                 if stats_dict['Encryption Algorithms']:
                     temp = []
-                    for algorithmInfo in stats_dict['Encryption Algorithms']:
-                        temp.append(f"{algorithmInfo[0]} {str(algorithmInfo[1])} bits")
+                    for algorithm_info in stats_dict['Encryption Algorithms']:
+                        temp.append(f"{algorithm_info[0]} {str(algorithm_info[1])} bits")
                     json_body["encryption_algorithms"] = temp
 
                 json_body.update(dict(
@@ -270,61 +270,55 @@ class PeePDF(ServiceBase):
                     events = stats_version['Events']
                     vulns = stats_version['Vulns']
                     elements = stats_version['Elements']
-                    is_suspicious = False
                     if events is not None or actions is not None or vulns is not None or elements is not None:
                         res_suspicious = ResultSection('Suspicious elements', parent=res_version)
+                        res_suspicious.set_heuristic(8)
                         if events is not None:
                             for event in events:
                                 res_suspicious.add_line(f"{event}: {self.list_first_x(events[event])}")
-                            is_suspicious = True
                         if actions is not None:
                             for action in actions:
                                 res_suspicious.add_line(f"{action}: {self.list_first_x(actions[action])}")
-                            is_suspicious = True
                         if vulns is not None:
                             for vuln in vulns:
                                 if vuln in vulnsDict:
                                     temp = [vuln, ' (']
-                                    for vulnCVE in vulnsDict[vuln]:
+                                    for vuln_cve in vulnsDict[vuln]:
                                         if len(temp) != 2:
                                             temp.append(',')
-                                            vulnCVE = "".join(vulnCVE) if isinstance(vulnCVE, list) else vulnCVE
-                                            temp.append(vulnCVE)
-                                            cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE)
+                                            vuln_cve = "".join(vuln_cve) if isinstance(vuln_cve, list) else vuln_cve
+                                            temp.append(vuln_cve)
+                                            cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vuln_cve)
                                             if cve_found:
-                                                res_suspicious.add_tag('attribution.exploit',
-                                                                       vulnCVE[cve_found.start():cve_found.end()])
-                                                res_suspicious.add_tag('file.behavior',
-                                                                       vulnCVE[cve_found.start():cve_found.end()])
+                                                vuln_name = vuln_cve[cve_found.start():cve_found.end()]
+                                                res_suspicious.add_tag('attribution.exploit', vuln_name)
+                                                res_suspicious.add_tag('file.behavior', vuln_name)
+                                                res_suspicious.heuristic.add_signature_id(vuln_name, score=500)
                                     temp.append('): ')
                                     temp.append(str(vulns[vuln]))
                                     res_suspicious.add_line(temp)
                                 else:
                                     res_suspicious.add_line(f"{vuln}: {str(vulns[vuln])}")
-                                is_suspicious = True
                         if elements is not None:
                             for element in elements:
                                 if element in vulnsDict:
                                     temp = [element, ' (']
-                                    for vulnCVE in vulnsDict[element]:
+                                    for vuln_cve in vulnsDict[element]:
                                         if len(temp) != 2:
                                             temp.append(',')
-                                        vulnCVE = "".join(vulnCVE) if isinstance(vulnCVE, list) else vulnCVE
-                                        temp.append(vulnCVE)
-                                        cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vulnCVE)
+                                        vuln_cve = "".join(vuln_cve) if isinstance(vuln_cve, list) else vuln_cve
+                                        temp.append(vuln_cve)
+                                        cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vuln_cve)
                                         if cve_found:
-                                            res_suspicious.add_tag('attribution.exploit',
-                                                                   vulnCVE[cve_found.start():cve_found.end()])
-                                            res_suspicious.add_tag('file.behavior',
-                                                                   vulnCVE[cve_found.start():cve_found.end()])
+                                            vuln_name = vuln_cve[cve_found.start():cve_found.end()]
+                                            res_suspicious.add_tag('attribution.exploit', vuln_name)
+                                            res_suspicious.add_tag('file.behavior', vuln_name)
+                                            res_suspicious.heuristic.add_signature_id(vuln_name, score=500)
                                     temp.append('): ')
                                     temp.append(str(elements[element]))
                                     res_suspicious.add_line(temp)
-                                    is_suspicious = True
                                 else:
                                     res_suspicious.add_line(f"\t\t{element}: {str(elements[element])}")
-                                    is_suspicious = True
-                    res_suspicious.set_heuristic(8) if is_suspicious else None
 
                     urls = stats_version['URLs']
                     if urls is not None:
