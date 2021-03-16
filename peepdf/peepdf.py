@@ -27,7 +27,7 @@ def validate_non_humanreadable_buff(data, buff_min_size=256, whitespace_ratio=0.
 # noinspection PyGlobalUndefined
 class PeePDF(ServiceBase):
 
-    CVE_FALSE_POSITIVE = ["CVE-2009-0658", "CVE-2010-0188"]
+    CVE_FALSE_POSITIVES = ["CVE-2009-0658", "CVE-2010-0188"]
 
     def __init__(self, config=None):
         super(PeePDF, self).__init__(config)
@@ -291,12 +291,11 @@ class PeePDF(ServiceBase):
                                         vuln_cve = "".join(vuln_cve) if isinstance(vuln_cve, list) else vuln_cve
                                         temp.append(vuln_cve)
                                         cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vuln_cve)
-                                        if cve_found:
-                                            vuln_name = vuln_cve[cve_found.start():cve_found.end()]
-                                            if vuln_name not in self.CVE_FALSE_POSITIVES:
-                                                res_suspicious.add_tag('attribution.exploit', vuln_name)
-                                                res_suspicious.add_tag('file.behavior', vuln_name)
-                                                res_suspicious.heuristic.add_signature_id(vuln_name, score=500)
+                                        if cve_found and cve_found.group() not in self.CVE_FALSE_POSITIVES:
+                                            vuln_name = cve_found.group()
+                                            res_suspicious.add_tag('attribution.exploit', vuln_name)
+                                            res_suspicious.add_tag('file.behavior', vuln_name)
+                                            res_suspicious.heuristic.add_signature_id(vuln_name, score=500)
                                     temp.append('): ')
                                     temp.append(str(vulns[vuln]))
                                     res_suspicious.add_line(temp)
@@ -312,12 +311,11 @@ class PeePDF(ServiceBase):
                                         vuln_cve = "".join(vuln_cve) if isinstance(vuln_cve, list) else vuln_cve
                                         temp.append(vuln_cve)
                                         cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vuln_cve)
-                                        if cve_found:
-                                            vuln_name = vuln_cve[cve_found.start():cve_found.end()]
-                                            if vuln_name not in self.CVE_FALSE_POSITIVES:
-                                                res_suspicious.add_tag('attribution.exploit', vuln_name)
-                                                res_suspicious.add_tag('file.behavior', vuln_name)
-                                                res_suspicious.heuristic.add_signature_id(vuln_name, score=500)
+                                        if cve_found and cve_found.group() not in self.CVE_FALSE_POSITIVES:
+                                            vuln_name = cve_found.group()
+                                            res_suspicious.add_tag('attribution.exploit', vuln_name)
+                                            res_suspicious.add_tag('file.behavior', vuln_name)
+                                            res_suspicious.heuristic.add_signature_id(vuln_name, score=500)
                                     temp.append('): ')
                                     temp.append(str(elements[element]))
                                     res_suspicious.add_line(temp)
