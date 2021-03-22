@@ -1,3 +1,5 @@
+""" PeePDF service """
+
 import gc
 import hashlib
 import json
@@ -15,6 +17,7 @@ BANNED_TYPES = ["xref", "objstm", "xobject", "metadata", "3d", "pattern", None]
 
 
 def validate_non_humanreadable_buff(data, buff_min_size=256, whitespace_ratio=0.10):
+    """ Checks if a buffer is human readable using the porportion of whitespace """
     ws_count = data.count(" ")
     ws_count += data.count("%20") * 3
     if len(data) >= buff_min_size:
@@ -26,21 +29,15 @@ def validate_non_humanreadable_buff(data, buff_min_size=256, whitespace_ratio=0.
 
 # noinspection PyGlobalUndefined
 class PeePDF(ServiceBase):
-
+    """ PeePDF service """
     CVE_FALSE_POSITIVES = ["CVE-2009-0658", "CVE-2010-0188"]
 
     def __init__(self, config=None):
         super().__init__(config)
         self.max_pdf_size = self.config.get('max_pdf_size', 3000000)
 
-    # noinspection PyUnusedLocal,PyMethodMayBeStatic
-    def _report_embedded_xdp(self, file_res, chunk_number, binary, leftover):
-        res_section = ResultSection([f"Found {chunk_number}", "Embedded PDF (in XDP)"])
-        res_section.set_heuristic(1)
-        res_section.add_tag('file.behavior', "Embedded PDF (in XDP)")
-        file_res.add_section(res_section)
-
     def find_xdp_embedded(self, filename, cbin, request):
+        """ Find and report embedded XDP sections in PDF """
         file_res = request.result
         if "<pdf" in cbin and "<document>" in cbin and "<chunk>" in cbin:
             chunks = cbin.split("<chunk>")
@@ -71,11 +68,14 @@ class PeePDF(ServiceBase):
                     request.add_extracted(file_path, os.path.basename(file_path), f"UnXDP from {filename}")
 
             if chunk_number > 0:
-                self._report_embedded_xdp(file_res, chunk_number, cbin, leftover)
-
+                res_section = ResultSection([f"Found {chunk_number}", "Embedded PDF (in XDP)"])
+                res_section.set_heuristic(1)
+                res_section.add_tag('file.behavior', "Embedded PDF (in XDP)")
+                file_res.add_section(res_section)
         return file_res
 
     def execute(self, request):
+        """ Run service """
         request.result = Result()
 
         # Filter out large documents
@@ -119,6 +119,7 @@ class PeePDF(ServiceBase):
     # noinspection PyBroadException
     @staticmethod
     def get_big_buffs(data, buff_min_size=256):
+        """ Finds large buffers in data """
         # Hunt for big variables
         var_re = r'[^\\]?"(.*?[^\\])"'
         last_m = None
@@ -167,6 +168,7 @@ class PeePDF(ServiceBase):
 
     @staticmethod
     def check_dangerous_func(data):
+        """ Check for the functions eval and unescape """
         has_eval = False
         has_unescape = False
         # eval
@@ -199,6 +201,7 @@ class PeePDF(ServiceBase):
 
     @staticmethod
     def list_first_x(mylist, size=20):
+        """ Truncate list for display """
         add_reminder = len(mylist) > size
 
         mylist = mylist[:size]
@@ -300,6 +303,7 @@ class PeePDF(ServiceBase):
 
     # noinspection PyBroadException,PyUnboundLocalVariable
     def peepdf_analysis(self, pdf_file, file_content, request):
+        """ Analyze parsed pdf file """
         temp_filename = request.file_path
         res_list = []
         # js_stream = []
