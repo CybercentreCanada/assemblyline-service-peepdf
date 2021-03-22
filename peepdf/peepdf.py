@@ -99,8 +99,11 @@ class PeePDF(ServiceBase):
             if ret == 0:
                 self.peepdf_analysis(pdf_file, file_contents, request)
             else:
+                self.log.warning("Failed to parse file {pdf_file.errors[-1]}")
                 res = ResultSection("ERROR: Could not parse file with PeePDF.")
                 request.result.add_section(res)
+        except Exception as e:
+            self.log.error("PeePDF encountered an error for file {request.sha256}: str{e}"
         finally:
             try:
                 del pdf_file
@@ -302,9 +305,8 @@ class PeePDF(ServiceBase):
     # noinspection PyBroadException,PyUnboundLocalVariable
     def peepdf_analysis(self, pdf_file, file_content, request):
         """ Analyze parsed pdf file """
-        temp_filename = request.file_path
+        file_res = request.result
         res_list = []
-        # js_stream = []
         f_list = []
         js_dump = []
 
@@ -315,27 +317,20 @@ class PeePDF(ServiceBase):
             # Not a PDF
             return
 
-        json_body = dict(
-            version=stats_dict['Version'],
-            binary=stats_dict['Binary'],
-            linearized=stats_dict['Linearized'],
-            encrypted=stats_dict['Encrypted'],
-        )
+        json_body = {
+                'version': stats_dict['Version'],
+                'binary': stats_dict['Binary'],
+                'linearized': stats_dict['Linearized'],
+                'encrypted': stats_dict['Encrypted'],
+                'Encryption Algorithms': [f"{algorithm_info[0]} {str(algorithm_info[1])} bits"
+                    for algorithm_info in stats_dict['Encryption Algorithms'],
+                'updates': stats_dict['Updates'],
+                'objects': stats_dict['Objects'],
+                'streams': stats_dict['Streams'],
+                'comments': stats_dict['Comments'],
+                'errors': ", ".join(stats_dict['Errors'] if stats_dict['Errors'] else "None"
+                    }
 
-        if stats_dict['Encryption Algorithms']:
-            temp = []
-            for algorithm_info in stats_dict['Encryption Algorithms']:
-                temp.append(f"{algorithm_info[0]} {str(algorithm_info[1])} bits")
-            json_body["encryption_algorithms"] = temp
-
-        json_body.update(dict(
-            updates=stats_dict['Updates'],
-            objects=stats_dict['Objects'],
-            streams=stats_dict['Streams'],
-            comments=stats_dict['Comments'],
-            errors={True: ", ".join(stats_dict['Errors']),
-                    False: "None"}[len(stats_dict['Errors']) != 0]
-        ))
         res = ResultSection("PDF File Information", body_format=BODY_FORMAT.KEY_VALUE,
                             body=json.dumps(json_body))
 
@@ -369,7 +364,6 @@ class PeePDF(ServiceBase):
             if stats_version['Objects with JS code'] is not None:
                 v_json_body['objects_with_js_code'] = \
                     self.list_first_x(stats_version['Objects with JS code'][1])
-                # js_stream.extend(stats_version['Objects with JS code'][1])
 
             res_version = ResultSection(f"Version {str(version)}", parent=res,
                                         body_format=BODY_FORMAT.KEY_VALUE, body=json.dumps(v_json_body))
@@ -554,4 +548,4 @@ class PeePDF(ServiceBase):
 
         for filename in f_list:
             request.add_extracted(filename, os.path.basename(filename),
-                                  f"Dumped from {os.path.basename(temp_filename)}")
+                                  f"Dumped from {os.path.basename(request.file_path)}")
