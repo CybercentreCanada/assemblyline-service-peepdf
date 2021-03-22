@@ -190,6 +190,97 @@ class PeePDF(ServiceBase):
 
         return mylist
 
+    def analyze_javascript(self, js_code, js_res, obj, request):
+        """ Create section for javascript code blocks """
+        buffers = False
+
+        # Check for Eval and Unescape
+        has_eval, has_unescape = self.check_dangerous_func(js_code)
+        if has_eval:
+            eval_res = ResultSection("[Suspicious Function] eval()", parent=js_res)
+
+            eval_res.add_line("This JavaScript block uses eval() function "
+                                      "which is often used to launch deobfuscated "
+                                      "JavaScript code.")
+            eval_res.set_heuristic(3)
+        if has_unescape:
+            unescape_res = ResultSection("[Suspicious Function] unescape()", parent=js_res)
+            unescape.add_line("This JavaScript block uses unescape() "
+                                      "function. It may be legitimate but it is definitely "
+                                      "suspicious since malware often use this to "
+                                      "deobfuscate code blocks.")
+            unescape.set_heuristic(4)
+
+        # Large Buffers
+        big_buffs = self.get_big_buffs(js_code)
+        for buff_idx, buff in enumerate(big_buffs):
+            error, new_buff = unescape(buff)
+            if error == 0:
+                buff = new_buff
+
+            if buff not in unescaped_bytes:
+                temp_path_name = None
+                if ";base64," in buff[:100] and "data:" in buff[:100]:
+                    temp_path_name = f"obj{obj}_unb64_{buff_idx}.buff"
+                    try:
+                        buff = b64decode(buff.split(";base64,")[1].strip())
+                        temp_path = os.path.join(self.working_directory, temp_path_name)
+                        with open(temp_path, "wb") as f:
+                            f.write(buff)
+                        request.add_extracted(temp_path, os.path.basename(temp_path),
+                                          f"Dumped from {os.path.basename(request.file_path)}")
+                    except Exception:
+                        self.log.error("Found 'data:;base64, ' buffer "
+                                       "but failed to base64 decode.")
+                        temp_path_name = None
+
+                if temp_path_name is not None:
+                    buff_cond = f" and was resubmitted as {temp_path_name}"
+                else:
+                    buff_cond = ""
+                buff_res = ResultSection(
+                    f"A {len(buff)} bytes buffer was found in the JavaScript "
+                    f"block{buff_cond}. Here are the first 256 bytes.",
+                    parent=js_res, body=hexdump(bytes(buff[:256], "utf-8")),
+                    body_format=BODY_FORMAT.MEMORY_DUMP)
+                buffers = True
+
+        # Extract javascript block
+        if has_eval or has_unescape or len(big_buffs > 0):
+            js_res.add_tag('file.behaviour', "Suspicious Javascript in PDF")
+            temp_js_outname = f"object{obj}-{version}_{js_idx}.js"
+            temp_js_path = os.path.join(self.working_directory, temp_js_outname)
+            temp_js_bin = js_code.encode("utf-8")
+            with open(temp_js_path, "wb") as f:
+                f.write(temp_js_bin)
+            f_list.append(temp_js_path)
+            js_res.add_line(f"The JavaScript block was saved as {temp_js_outname}")
+
+        # Handle unescaped buffers
+        for sc_idx, sc in enumerate(set(unescaped_bytes)):
+            try:
+                sc = sc.decode("hex")
+            except Exception:
+                pass
+
+            temp_path_name = f"obj{obj}_unescaped_{sc_idx}.buff"
+
+            shell_res = ResultSection(f"Unknown unescaped {len(sc)} bytes JavaScript "
+                                      f"buffer (id: {sc_idx}) was resubmitted as "
+                                      f"{temp_path_name}. Here are the first 256 bytes.",
+                                      parent=js_res)
+            shell_res.set_body(hexdump(sc[:256]), body_format=BODY_FORMAT.MEMORY_DUMP)
+
+            temp_path = os.path.join(self.working_directory, temp_path_name)
+            with open(temp_path, "wb") as f:
+                f.write(sc)
+            f_list.append(temp_path)
+
+            js_res.add_tag('file.behavior', "Unescaped JavaScript Buffer")
+            shell_res.set_heuristic(6)
+
+        return buffers
+
     # noinspection PyBroadException,PyUnboundLocalVariable
     def peepdf_analysis(self, temp_filename, file_content, request):
         file_res = Result()
@@ -330,7 +421,6 @@ class PeePDF(ServiceBase):
                             res_url.add_line(f"\t\t{url}")
                             res_url.set_heuristic(9)
 
-                    javascript_res_added = False
                     buff_heuristic_set = False
                     javascript_res = ResultSection("Javascript blocks found")
                     for obj in stats_version['Objects'][1]:
@@ -339,102 +429,18 @@ class PeePDF(ServiceBase):
                         if cur_obj.containsJScode:
                             javascript_res.add_line(f"Object [{obj} {version}] contains {len(cur_obj.JSCode)} "
                                                     f"block(s) of JavaScript")
-                            for js_idx, js in enumerate(cur_obj.JSCode):
-                                js_res = ResultSection(f"JavaScript Code (block: {js_idx})", parent=javascript_res)
+                            for js_index, js in enumerate(cur_obj.JSCode):
 
                                 js_code, unescaped_bytes, _, _, _ = analyseJS(js)
                                 js_dump += js_code
 
-                                # Check for Eval and Unescape
-                                has_eval, has_unescape = self.check_dangerous_func("".join(js_code))
-                                if has_eval:
-                                    eval_res = ResultSection("[Suspicious Function] eval()", parent=js_res)
-
-                                    eval_res.add_line("This JavaScript block uses eval() function "
-                                                              "which is often used to launch deobfuscated "
-                                                              "JavaScript code.")
-                                    eval_res.set_heuristic(3)
-                                if has_unescape:
-                                    unescape_res = ResultSection("[Suspicious Function] unescape()", parent=js_res)
-                                    unescape.add_line("This JavaScript block uses unescape() "
-                                                              "function. It may be legitimate but it is definitely "
-                                                              "suspicious since malware often use this to "
-                                                              "deobfuscate code blocks.")
-                                    unescape.set_heuristic(4)
-
-                                # Large Buffers
-                                big_buffs = self.get_big_buffs("".join(js_code))
-                                for buff_idx, buff in enumerate(big_buffs):
-                                    error, new_buff = unescape(buff)
-                                    if error == 0:
-                                        buff = new_buff
-
-                                    if buff not in unescaped_bytes:
-                                        temp_path_name = None
-                                        if ";base64," in buff[:100] and "data:" in buff[:100]:
-                                            temp_path_name = f"obj{obj}_unb64_{buff_idx}.buff"
-                                            try:
-                                                buff = b64decode(buff.split(";base64,")[1].strip())
-                                                temp_path = os.path.join(self.working_directory, temp_path_name)
-                                                with open(temp_path, "wb") as f:
-                                                    f.write(buff)
-                                                f_list.append(temp_path)
-                                            except Exception:
-                                                self.log.error("Found 'data:;base64, ' buffer "
-                                                               "but failed to base64 decode.")
-                                                temp_path_name = None
-
-                                        if temp_path_name is not None:
-                                            buff_cond = f" and was resubmitted as {temp_path_name}"
-                                        else:
-                                            buff_cond = ""
-                                        buff_res = ResultSection(
-                                            f"A {len(buff)} bytes buffer was found in the JavaScript "
-                                            f"block{buff_cond}. Here are the first 256 bytes.",
-                                            parent=js_res, body=hexdump(bytes(buff[:256], "utf-8")),
-                                            body_format=BODY_FORMAT.MEMORY_DUMP)
-                                        if not buff_heuristic_set:
-                                            javascript_res.set_heuristic(2)
-                                            buff_heuristic_set = True
-
-                                # Extract javascript block
-                                if has_eval or has_unescape or len(big_buffs > 0):
-                                    js_res.add_tag('file.behaviour', "Suspicious Javascript in PDF")
-                                    temp_js_outname = f"object{obj}-{version}_{js_idx}.js"
-                                    temp_js_path = os.path.join(self.working_directory, temp_js_outname)
-                                    temp_js_bin = "".join(js_code).encode("utf-8")
-                                    with open(temp_js_path, "wb") as f:
-                                        f.write(temp_js_bin)
-                                    f_list.append(temp_js_path)
-                                    js_res.add_line(f"The JavaScript block was saved as {temp_js_outname}")
-
-                                # Handle unescaped buffers
-                                for sc_idx, sc in enumerate(set(unescaped_bytes)):
-                                    try:
-                                        sc = sc.decode("hex")
-                                    except Exception:
-                                        pass
-
-                                    temp_path_name = f"obj{obj}_unescaped_{sc_idx}.buff"
-
-                                    shell_res = ResultSection(f"Unknown unescaped {len(sc)} bytes JavaScript "
-                                                              f"buffer (id: {sc_idx}) was resubmitted as "
-                                                              f"{temp_path_name}. Here are the first 256 bytes.",
-                                                              parent=js_res)
-                                    shell_res.set_body(hexdump(sc[:256]), body_format=BODY_FORMAT.MEMORY_DUMP)
-
-                                    temp_path = os.path.join(self.working_directory, temp_path_name)
-                                    with open(temp_path, "wb") as f:
-                                        f.write(sc)
-                                    f_list.append(temp_path)
-
-                                    js_res.add_tag('file.behavior', "Unescaped JavaScript Buffer")
-                                    shell_res.set_heuristic(6)
-
+                                js_res = ResultSection(f"JavaScript Code (block: {js_index})")
+                                buffers = analyze_javascript("".join(js_code), js_res, obj, request)
                                 if js_res.subsections:
                                     javascript_res.add_subsection(js_res)
-                                    if not javascript_res_added:
-                                        res_list.append(javascript_res)
+                                    if buffers and not buff_heuristic_set:
+                                        buff_heuristic_set = True
+                                        javascript_res.set_heuristic(2)
 
                         elif cur_obj.type == "stream":
                             if cur_obj.isEncodedStream and cur_obj.filter is not None:
@@ -504,7 +510,8 @@ class PeePDF(ServiceBase):
                                 res_list.append(cur_res)
                         else:
                             pass
-
+                    if javascript_res.subsections:
+                        file_res.add_section(javascript_res)
                 file_res.add_section(res)
 
                 for results in res_list:
