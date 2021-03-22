@@ -76,28 +76,45 @@ class PeePDF(ServiceBase):
         return file_res
 
     def execute(self, request):
-        temp_filename = request.file_path
+        request.result = Result()
 
         # Filter out large documents
-        if os.path.getsize(temp_filename) > self.max_pdf_size:
-            file_res = Result()
+        if os.path.getsize(request.file_path) > self.max_pdf_size:
             res = (ResultSection(f"PDF Analysis of the file was skipped because the "
                                  f"file is too big (limit is {(self.max_pdf_size / 1000 / 1000)} MB)."))
 
-            file_res.add_section(res)
-            request.result = file_res
+            request.result.add_section(res)
             return
 
-        filename = os.path.basename(temp_filename)
-        # noinspection PyUnusedLocal
-        file_content = ''
-        with open(temp_filename, 'rb') as f:
-            file_content = f.read()
 
-        if '<xdp:xdp'.encode(encoding='UTF-8') in file_content:
-            self.find_xdp_embedded(filename, file_content, request)
+        with open(request.file_path, 'rb') as f:
+            file_contents = f.read()
 
-        self.peepdf_analysis(temp_filename, file_content, request)
+        if '<xdp:xdp'.encode(encoding='UTF-8') in file_contents:
+            filename = os.path.basename(request.file_path)
+            self.find_xdp_embedded(filename, file_contents, request)
+
+        # noinspection PyBroadException
+        try:
+            pdf_parser = PDFParser()
+            ret, pdf_file = pdf_parser.parse(request.file_path, True, False, file_contents)
+            if ret == 0:
+                self.peepdf_analysis(pdf_file, file_contents, request)
+            else:
+                res = ResultSection("ERROR: Could not parse file with PeePDF.")
+                request.result.add_section(res)
+        finally:
+            try:
+                del pdf_file
+            except Exception:
+                pass
+
+            try:
+                del pdf_parser
+            except Exception:
+                pass
+
+            gc.collect()
 
     # noinspection PyBroadException
     @staticmethod
@@ -190,7 +207,7 @@ class PeePDF(ServiceBase):
 
         return mylist
 
-    def analyze_javascript(self, js_code, js_res, obj, request):
+    def analyze_javascript(self, js_code, unescaped_bytes, js_res, obj, request):
         """ Create section for javascript code blocks """
         buffers = False
 
@@ -282,278 +299,257 @@ class PeePDF(ServiceBase):
         return buffers
 
     # noinspection PyBroadException,PyUnboundLocalVariable
-    def peepdf_analysis(self, temp_filename, file_content, request):
-        file_res = Result()
-        try:
-            res_list = []
-            # js_stream = []
-            f_list = []
-            js_dump = []
+    def peepdf_analysis(self, pdf_file, file_content, request):
+        temp_filename = request.file_path
+        res_list = []
+        # js_stream = []
+        f_list = []
+        js_dump = []
 
-            pdf_parser = PDFParser()
-            ret, pdf_file = pdf_parser.parse(temp_filename, True, False, file_content)
-            if ret == 0:
-                stats_dict = pdf_file.getStats()
+        stats_dict = pdf_file.getStats()
 
-                if ", ".join(stats_dict['Errors']) == "Bad PDF header, %%EOF not found, PDF sections not found, No " \
-                                                      "indirect objects found in the body":
-                    # Not a PDF
-                    return
+        if ", ".join(stats_dict['Errors']) == "Bad PDF header, %%EOF not found, PDF sections not found, No " \
+                                              "indirect objects found in the body":
+            # Not a PDF
+            return
 
-                json_body = dict(
-                    version=stats_dict['Version'],
-                    binary=stats_dict['Binary'],
-                    linearized=stats_dict['Linearized'],
-                    encrypted=stats_dict['Encrypted'],
-                )
+        json_body = dict(
+            version=stats_dict['Version'],
+            binary=stats_dict['Binary'],
+            linearized=stats_dict['Linearized'],
+            encrypted=stats_dict['Encrypted'],
+        )
 
-                if stats_dict['Encryption Algorithms']:
-                    temp = []
-                    for algorithm_info in stats_dict['Encryption Algorithms']:
-                        temp.append(f"{algorithm_info[0]} {str(algorithm_info[1])} bits")
-                    json_body["encryption_algorithms"] = temp
+        if stats_dict['Encryption Algorithms']:
+            temp = []
+            for algorithm_info in stats_dict['Encryption Algorithms']:
+                temp.append(f"{algorithm_info[0]} {str(algorithm_info[1])} bits")
+            json_body["encryption_algorithms"] = temp
 
-                json_body.update(dict(
-                    updates=stats_dict['Updates'],
-                    objects=stats_dict['Objects'],
-                    streams=stats_dict['Streams'],
-                    comments=stats_dict['Comments'],
-                    errors={True: ", ".join(stats_dict['Errors']),
-                            False: "None"}[len(stats_dict['Errors']) != 0]
-                ))
-                res = ResultSection("PDF File Information", body_format=BODY_FORMAT.KEY_VALUE,
-                                    body=json.dumps(json_body))
+        json_body.update(dict(
+            updates=stats_dict['Updates'],
+            objects=stats_dict['Objects'],
+            streams=stats_dict['Streams'],
+            comments=stats_dict['Comments'],
+            errors={True: ", ".join(stats_dict['Errors']),
+                    False: "None"}[len(stats_dict['Errors']) != 0]
+        ))
+        res = ResultSection("PDF File Information", body_format=BODY_FORMAT.KEY_VALUE,
+                            body=json.dumps(json_body))
 
-                for version in range(len(stats_dict['Versions'])):
-                    stats_version = stats_dict['Versions'][version]
-                    v_json_body = dict(
-                        catalog=stats_version['Catalog'] or "no",
-                        info=stats_version['Info'] or "no",
-                        objects=self.list_first_x(stats_version['Objects'][1]),
-                    )
+        for version in range(len(stats_dict['Versions'])):
+            stats_version = stats_dict['Versions'][version]
+            v_json_body = dict(
+                catalog=stats_version['Catalog'] or "no",
+                info=stats_version['Info'] or "no",
+                objects=self.list_first_x(stats_version['Objects'][1]),
+            )
 
-                    if stats_version['Compressed Objects'] is not None:
-                        v_json_body['compressed_objects'] = self.list_first_x(stats_version['Compressed Objects'][1])
+            if stats_version['Compressed Objects'] is not None:
+                v_json_body['compressed_objects'] = self.list_first_x(stats_version['Compressed Objects'][1])
 
-                    if stats_version['Errors'] is not None:
-                        v_json_body['errors'] = self.list_first_x(stats_version['Errors'][1])
+            if stats_version['Errors'] is not None:
+                v_json_body['errors'] = self.list_first_x(stats_version['Errors'][1])
 
-                    v_json_body['streams'] = self.list_first_x(stats_version['Streams'][1])
+            v_json_body['streams'] = self.list_first_x(stats_version['Streams'][1])
 
-                    if stats_version['Xref Streams'] is not None:
-                        v_json_body['xref_streams'] = self.list_first_x(stats_version['Xref Streams'][1])
+            if stats_version['Xref Streams'] is not None:
+                v_json_body['xref_streams'] = self.list_first_x(stats_version['Xref Streams'][1])
 
-                    if stats_version['Object Streams'] is not None:
-                        v_json_body['object_streams'] = self.list_first_x(stats_version['Object Streams'][1])
+            if stats_version['Object Streams'] is not None:
+                v_json_body['object_streams'] = self.list_first_x(stats_version['Object Streams'][1])
 
-                    if int(stats_version['Streams'][0]) > 0:
-                        v_json_body['encoded'] = self.list_first_x(stats_version['Encoded'][1])
-                        if stats_version['Decoding Errors'] is not None:
-                            v_json_body['decoding_errors'] = self.list_first_x(stats_version['Decoding Errors'][1])
+            if int(stats_version['Streams'][0]) > 0:
+                v_json_body['encoded'] = self.list_first_x(stats_version['Encoded'][1])
+                if stats_version['Decoding Errors'] is not None:
+                    v_json_body['decoding_errors'] = self.list_first_x(stats_version['Decoding Errors'][1])
 
-                    if stats_version['Objects with JS code'] is not None:
-                        v_json_body['objects_with_js_code'] = \
-                            self.list_first_x(stats_version['Objects with JS code'][1])
-                        # js_stream.extend(stats_version['Objects with JS code'][1])
+            if stats_version['Objects with JS code'] is not None:
+                v_json_body['objects_with_js_code'] = \
+                    self.list_first_x(stats_version['Objects with JS code'][1])
+                # js_stream.extend(stats_version['Objects with JS code'][1])
 
-                    res_version = ResultSection(f"Version {str(version)}", parent=res,
-                                                body_format=BODY_FORMAT.KEY_VALUE, body=json.dumps(v_json_body))
+            res_version = ResultSection(f"Version {str(version)}", parent=res,
+                                        body_format=BODY_FORMAT.KEY_VALUE, body=json.dumps(v_json_body))
 
-                    actions = stats_version['Actions']
-                    events = stats_version['Events']
-                    vulns = stats_version['Vulns']
-                    elements = stats_version['Elements']
-                    if events is not None or actions is not None or vulns is not None or elements is not None:
-                        res_suspicious = ResultSection('Suspicious elements', parent=res_version)
-                        res_suspicious.set_heuristic(8)
-                        if events is not None:
-                            for event in events:
-                                res_suspicious.add_line(f"{event}: {self.list_first_x(events[event])}")
-                        if actions is not None:
-                            for action in actions:
-                                res_suspicious.add_line(f"{action}: {self.list_first_x(actions[action])}")
-                        if vulns is not None:
-                            for vuln in vulns:
-                                if vuln in vulnsDict:
-                                    temp = [vuln, ' (']
-                                    for vuln_cve in vulnsDict[vuln]:
-                                        if len(temp) != 2:
-                                            temp.append(',')
-                                        vuln_cve = "".join(vuln_cve) if isinstance(vuln_cve, list) else vuln_cve
-                                        temp.append(vuln_cve)
-                                        cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vuln_cve)
-                                        if cve_found and cve_found.group() not in self.CVE_FALSE_POSITIVES:
-                                            vuln_name = cve_found.group()
-                                            res_suspicious.add_tag('attribution.exploit', vuln_name)
-                                            res_suspicious.add_tag('file.behavior', vuln_name)
-                                            res_suspicious.heuristic.add_signature_id(vuln_name, score=500)
-                                    temp.append('): ')
-                                    temp.append(str(vulns[vuln]))
-                                    res_suspicious.add_line(temp)
-                                else:
-                                    res_suspicious.add_line(f"{vuln}: {str(vulns[vuln])}")
-                        if elements is not None:
-                            for element in elements:
-                                if element in vulnsDict:
-                                    temp = [element, ' (']
-                                    for vuln_cve in vulnsDict[element]:
-                                        if len(temp) != 2:
-                                            temp.append(',')
-                                        vuln_cve = "".join(vuln_cve) if isinstance(vuln_cve, list) else vuln_cve
-                                        temp.append(vuln_cve)
-                                        cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vuln_cve)
-                                        if cve_found and cve_found.group() not in self.CVE_FALSE_POSITIVES:
-                                            vuln_name = cve_found.group()
-                                            res_suspicious.add_tag('attribution.exploit', vuln_name)
-                                            res_suspicious.add_tag('file.behavior', vuln_name)
-                                            res_suspicious.heuristic.add_signature_id(vuln_name, score=500)
-                                    temp.append('): ')
-                                    temp.append(str(elements[element]))
-                                    res_suspicious.add_line(temp)
-                                else:
-                                    res_suspicious.add_line(f"\t\t{element}: {str(elements[element])}")
-
-                    urls = stats_version['URLs']
-                    if urls is not None:
-                        res.add_line("")
-                        res_url = ResultSection('Found URLs', parent=res)
-                        for url in urls:
-                            res_url.add_line(f"\t\t{url}")
-                            res_url.set_heuristic(9)
-
-                    buff_heuristic_set = False
-                    javascript_res = ResultSection("Javascript blocks found")
-                    for obj in stats_version['Objects'][1]:
-                        cur_obj = pdf_file.getObject(obj, version)
-
-                        if cur_obj.containsJScode:
-                            javascript_res.add_line(f"Object [{obj} {version}] contains {len(cur_obj.JSCode)} "
-                                                    f"block(s) of JavaScript")
-                            for js_index, js in enumerate(cur_obj.JSCode):
-
-                                js_code, unescaped_bytes, _, _, _ = analyseJS(js)
-                                js_dump += js_code
-
-                                js_res = ResultSection(f"JavaScript Code (block: {js_index})")
-                                buffers = analyze_javascript("".join(js_code), js_res, obj, request)
-                                if js_res.subsections:
-                                    javascript_res.add_subsection(js_res)
-                                    if buffers and not buff_heuristic_set:
-                                        buff_heuristic_set = True
-                                        javascript_res.set_heuristic(2)
-
-                        elif cur_obj.type == "stream":
-                            if cur_obj.isEncodedStream and cur_obj.filter is not None:
-                                data = cur_obj.decodedStream
-                                encoding = cur_obj.filter.value.replace("[", "").replace("]", "").replace("/",
-                                                                                                          "").strip()
-                                val = cur_obj.rawValue
-                                otype = cur_obj.elements.get("/Type", None)
-                                sub_type = cur_obj.elements.get("/Subtype", None)
-                                length = cur_obj.elements.get("/Length", None)
-
-                            else:
-                                data = cur_obj.rawStream
-                                encoding = None
-                                val = cur_obj.rawValue
-                                otype = cur_obj.elements.get("/Type", None)
-                                sub_type = cur_obj.elements.get("/Subtype", None)
-                                length = cur_obj.elements.get("/Length", None)
-
-                            if otype:
-                                otype = otype.value.replace("/", "").lower()
-                            if sub_type:
-                                sub_type = sub_type.value.replace("/", "").lower()
-                            if length:
-                                length = length.value
-
-                            if otype == "embeddedfile":
-                                if len(data) > 4096:
-                                    if encoding is not None:
-                                        temp_encoding_str = f"_{encoding}"
-                                    else:
-                                        temp_encoding_str = ""
-
-                                    cur_res = ResultSection(
-                                        f'Embedded file found ({length} bytes) [obj: {obj} {version}] '
-                                        f'and dumped for analysis {f"(Type: {otype}) " if otype is not None else ""}'
-                                        f'{f"(SubType: {sub_type}) " if sub_type is not None else ""}'
-                                        f'{f"(Encoded with {encoding})" if encoding is not None else ""}'
-                                    )
-
-                                    temp_path_name = f"EmbeddedFile_{obj}{temp_encoding_str}.obj"
-                                    temp_path = os.path.join(self.working_directory, temp_path_name)
-                                    with open(temp_path, "wb") as f:
-                                        if isinstance(data, str):
-                                            data = data.encode()
-                                        f.write(data)
-                                    f_list.append(temp_path)
-
-                                    cur_res.add_line(f"The EmbeddedFile object was saved as {temp_path_name}")
-                                    res_list.append(cur_res)
-
-                            elif otype not in BANNED_TYPES:
-                                cur_res = ResultSection(
-                                    f'Unknown stream found [obj: {obj} {version}] '
-                                    f'{f"(Type: {otype}) " if otype is not None else ""}'
-                                    f'{f"(SubType: {sub_type}) " if sub_type is not None else ""}'
-                                    f'{f"(Encoded with {encoding})" if encoding is not None else ""}'
-                                )
-                                for line in val.splitlines():
-                                    cur_res.add_line(line)
-
-                                emb_res = ResultSection('First 256 bytes', parent=cur_res)
-                                first_256 = data[:256]
-                                if isinstance(first_256, str):
-                                    first_256 = first_256.encode()
-                                emb_res.set_body(hexdump(first_256), BODY_FORMAT.MEMORY_DUMP)
-                                res_list.append(cur_res)
+            actions = stats_version['Actions']
+            events = stats_version['Events']
+            vulns = stats_version['Vulns']
+            elements = stats_version['Elements']
+            if events is not None or actions is not None or vulns is not None or elements is not None:
+                res_suspicious = ResultSection('Suspicious elements', parent=res_version)
+                res_suspicious.set_heuristic(8)
+                if events is not None:
+                    for event in events:
+                        res_suspicious.add_line(f"{event}: {self.list_first_x(events[event])}")
+                if actions is not None:
+                    for action in actions:
+                        res_suspicious.add_line(f"{action}: {self.list_first_x(actions[action])}")
+                if vulns is not None:
+                    for vuln in vulns:
+                        if vuln in vulnsDict:
+                            temp = [vuln, ' (']
+                            for vuln_cve in vulnsDict[vuln]:
+                                if len(temp) != 2:
+                                    temp.append(',')
+                                vuln_cve = "".join(vuln_cve) if isinstance(vuln_cve, list) else vuln_cve
+                                temp.append(vuln_cve)
+                                cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vuln_cve)
+                                if cve_found and cve_found.group() not in self.CVE_FALSE_POSITIVES:
+                                    vuln_name = cve_found.group()
+                                    res_suspicious.add_tag('attribution.exploit', vuln_name)
+                                    res_suspicious.add_tag('file.behavior', vuln_name)
+                                    res_suspicious.heuristic.add_signature_id(vuln_name, score=500)
+                            temp.append('): ')
+                            temp.append(str(vulns[vuln]))
+                            res_suspicious.add_line(temp)
                         else:
-                            pass
-                    if javascript_res.subsections:
-                        file_res.add_section(javascript_res)
-                file_res.add_section(res)
+                            res_suspicious.add_line(f"{vuln}: {str(vulns[vuln])}")
+                if elements is not None:
+                    for element in elements:
+                        if element in vulnsDict:
+                            temp = [element, ' (']
+                            for vuln_cve in vulnsDict[element]:
+                                if len(temp) != 2:
+                                    temp.append(',')
+                                vuln_cve = "".join(vuln_cve) if isinstance(vuln_cve, list) else vuln_cve
+                                temp.append(vuln_cve)
+                                cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vuln_cve)
+                                if cve_found and cve_found.group() not in self.CVE_FALSE_POSITIVES:
+                                    vuln_name = cve_found.group()
+                                    res_suspicious.add_tag('attribution.exploit', vuln_name)
+                                    res_suspicious.add_tag('file.behavior', vuln_name)
+                                    res_suspicious.heuristic.add_signature_id(vuln_name, score=500)
+                            temp.append('): ')
+                            temp.append(str(elements[element]))
+                            res_suspicious.add_line(temp)
+                        else:
+                            res_suspicious.add_line(f"\t\t{element}: {str(elements[element])}")
 
-                for results in res_list:
-                    file_res.add_section(results)
+            urls = stats_version['URLs']
+            if urls is not None:
+                res.add_line("")
+                res_url = ResultSection('Found URLs', parent=res)
+                for url in urls:
+                    res_url.add_line(f"\t\t{url}")
+                    res_url.set_heuristic(9)
 
-                if js_dump:
-                    js_dump_res = ResultSection('Full JavaScript dump')
+            buff_heuristic_set = False
+            javascript_res = ResultSection("Javascript blocks found")
+            for obj in stats_version['Objects'][1]:
+                cur_obj = pdf_file.getObject(obj, version)
 
-                    temp_js_dump = "javascript_dump.js"
-                    temp_js_dump_path = os.path.join(self.working_directory, temp_js_dump)
-                    try:
-                        temp_js_dump_bin = "\n\n----\n\n".join(js_dump).encode("utf-8")
-                    except UnicodeDecodeError:
-                        temp_js_dump_bin = "\n\n----\n\n".join(js_dump)
-                    temp_js_dump_sha1 = hashlib.sha1(temp_js_dump_bin).hexdigest()
-                    with open(temp_js_dump_path, "wb") as f:
-                        f.write(temp_js_dump_bin)
-                    f_list.append(temp_js_dump_path)
+                if cur_obj.containsJScode:
+                    javascript_res.add_line(f"Object [{obj} {version}] contains {len(cur_obj.JSCode)} "
+                                            f"block(s) of JavaScript")
+                    for js_index, js in enumerate(cur_obj.JSCode):
 
-                    js_dump_res.add_line(f"The JavaScript dump was saved as {temp_js_dump}")
-                    js_dump_res.add_line(f"The SHA-1 for the JavaScript dump is {temp_js_dump_sha1}")
+                        js_code, unescaped_bytes, _, _, _ = analyseJS(js)
+                        js_dump += js_code
 
-                    js_dump_res.add_tag('file.pdf.javascript.sha1', temp_js_dump_sha1)
-                    file_res.add_section(js_dump_res)
+                        js_res = ResultSection(f"JavaScript Code (block: {js_index})")
+                        buffers = analyze_javascript("".join(js_code), unescaped_bytes, js_res, obj, request)
+                        if js_res.subsections:
+                            javascript_res.add_subsection(js_res)
+                            if buffers and not buff_heuristic_set:
+                                buff_heuristic_set = True
+                                javascript_res.set_heuristic(2)
 
-                for filename in f_list:
-                    request.add_extracted(filename, os.path.basename(filename),
-                                          f"Dumped from {os.path.basename(temp_filename)}")
+                elif cur_obj.type == "stream":
+                    if cur_obj.isEncodedStream and cur_obj.filter is not None:
+                        data = cur_obj.decodedStream
+                        encoding = cur_obj.filter.value.replace("[", "").replace("]", "").replace("/",
+                                                                                                  "").strip()
+                        val = cur_obj.rawValue
+                        otype = cur_obj.elements.get("/Type", None)
+                        sub_type = cur_obj.elements.get("/Subtype", None)
+                        length = cur_obj.elements.get("/Length", None)
 
-            else:
-                res = ResultSection("ERROR: Could not parse file with PeePDF.")
-                file_res.add_section(res)
-        finally:
-            request.result = file_res
+                    else:
+                        data = cur_obj.rawStream
+                        encoding = None
+                        val = cur_obj.rawValue
+                        otype = cur_obj.elements.get("/Type", None)
+                        sub_type = cur_obj.elements.get("/Subtype", None)
+                        length = cur_obj.elements.get("/Length", None)
+
+                    if otype:
+                        otype = otype.value.replace("/", "").lower()
+                    if sub_type:
+                        sub_type = sub_type.value.replace("/", "").lower()
+                    if length:
+                        length = length.value
+
+                    if otype == "embeddedfile":
+                        if len(data) > 4096:
+                            if encoding is not None:
+                                temp_encoding_str = f"_{encoding}"
+                            else:
+                                temp_encoding_str = ""
+
+                            cur_res = ResultSection(
+                                f'Embedded file found ({length} bytes) [obj: {obj} {version}] '
+                                f'and dumped for analysis {f"(Type: {otype}) " if otype is not None else ""}'
+                                f'{f"(SubType: {sub_type}) " if sub_type is not None else ""}'
+                                f'{f"(Encoded with {encoding})" if encoding is not None else ""}'
+                            )
+
+                            temp_path_name = f"EmbeddedFile_{obj}{temp_encoding_str}.obj"
+                            temp_path = os.path.join(self.working_directory, temp_path_name)
+                            with open(temp_path, "wb") as f:
+                                if isinstance(data, str):
+                                    data = data.encode()
+                                f.write(data)
+                            f_list.append(temp_path)
+
+                            cur_res.add_line(f"The EmbeddedFile object was saved as {temp_path_name}")
+                            res_list.append(cur_res)
+
+                    elif otype not in BANNED_TYPES:
+                        cur_res = ResultSection(
+                            f'Unknown stream found [obj: {obj} {version}] '
+                            f'{f"(Type: {otype}) " if otype is not None else ""}'
+                            f'{f"(SubType: {sub_type}) " if sub_type is not None else ""}'
+                            f'{f"(Encoded with {encoding})" if encoding is not None else ""}'
+                        )
+                        for line in val.splitlines():
+                            cur_res.add_line(line)
+
+                        emb_res = ResultSection('First 256 bytes', parent=cur_res)
+                        first_256 = data[:256]
+                        if isinstance(first_256, str):
+                            first_256 = first_256.encode()
+                        emb_res.set_body(hexdump(first_256), BODY_FORMAT.MEMORY_DUMP)
+                        res_list.append(cur_res)
+                else:
+                    pass
+            if javascript_res.subsections:
+                file_res.add_section(javascript_res)
+        file_res.add_section(res)
+
+        for results in res_list:
+            file_res.add_section(results)
+
+        if js_dump:
+            js_dump_res = ResultSection('Full JavaScript dump')
+
+            temp_js_dump = "javascript_dump.js"
+            temp_js_dump_path = os.path.join(self.working_directory, temp_js_dump)
             try:
-                del pdf_file
-            except Exception:
-                pass
+                temp_js_dump_bin = "\n\n----\n\n".join(js_dump).encode("utf-8")
+            except UnicodeDecodeError:
+                temp_js_dump_bin = "\n\n----\n\n".join(js_dump)
+            temp_js_dump_sha1 = hashlib.sha1(temp_js_dump_bin).hexdigest()
+            with open(temp_js_dump_path, "wb") as f:
+                f.write(temp_js_dump_bin)
+            f_list.append(temp_js_dump_path)
 
-            try:
-                del pdf_parser
-            except Exception:
-                pass
+            js_dump_res.add_line(f"The JavaScript dump was saved as {temp_js_dump}")
+            js_dump_res.add_line(f"The SHA-1 for the JavaScript dump is {temp_js_dump_sha1}")
 
-            gc.collect()
+            js_dump_res.add_tag('file.pdf.javascript.sha1', temp_js_dump_sha1)
+            file_res.add_section(js_dump_res)
+
+        for filename in f_list:
+            request.add_extracted(filename, os.path.basename(filename),
+                                  f"Dumped from {os.path.basename(temp_filename)}")
