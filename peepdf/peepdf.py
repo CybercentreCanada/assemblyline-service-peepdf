@@ -9,7 +9,7 @@ from base64 import b64decode
 
 from assemblyline.common.hexdump import hexdump
 from assemblyline_v4_service.common.base import ServiceBase
-from assemblyline_v4_service.common.result import Result, ResultSection, BODY_FORMAT
+from assemblyline_v4_service.common.result import Result, ResultSection, BODY_FORMAT, Heuristic
 from peepdf.ext.peepdf.JSAnalysis import analyseJS, unescape
 from peepdf.ext.peepdf.PDFCore import PDFParser, vulnsDict
 
@@ -39,15 +39,15 @@ class PeePDF(ServiceBase):
     def find_xdp_embedded(self, filename, cbin, request):
         """ Find and report embedded XDP sections in PDF """
         file_res = request.result
-        if "<pdf" in cbin and "<document>" in cbin and "<chunk>" in cbin:
-            chunks = cbin.split("<chunk>")
+        if b'<pdf' in cbin and b'<document>' in cbin and b'<chunk>' in cbin:
+            chunks = cbin.split(b'<chunk>')
 
             chunk_number = 0
-            leftover = ""
+            leftover = b''
             for chunk in chunks:
-                if "</chunk>" not in chunk:
-                    leftover += chunk.replace("<document>", "").replace('<pdf xmlns="http://ns.adobe.com/xdp/pdf/">',
-                                                                        "")
+                if b'</chunk>' not in chunk:
+                    leftover += chunk.replace(b'<document>', b'') \
+                                     .replace(b'<pdf xmlns="http://ns.adobe.com/xdp/pdf/">', b'')
                     continue
 
                 chunk_number += 1
@@ -55,21 +55,20 @@ class PeePDF(ServiceBase):
                 un_b64 = None
                 # noinspection PyBroadException
                 try:
-                    un_b64 = b64decode(chunk.split("</chunk>")[0])
+                    un_b64 = b64decode(chunk.split(b'</chunk>')[0])
                 except Exception:
                     self.log.error("Found <pdf>, <document> and <chunk> tags inside an xdp file but could not "
                                    "un-base64 the content.")
 
                 if un_b64:
-                    new_filename = f"xdp_{chunk_number}.pdf"
+                    new_filename = f'xdp_{chunk_number}.pdf'
                     file_path = os.path.join(self.working_directory, new_filename)
-                    with open(file_path, "wb") as f:
+                    with open(file_path, 'wb') as f:
                         f.write(un_b64)
-                    request.add_extracted(file_path, os.path.basename(file_path), f"UnXDP from {filename}")
+                    request.add_extracted(file_path, os.path.basename(file_path), f'UnXDP from {filename}')
 
             if chunk_number > 0:
-                res_section = ResultSection([f"Found {chunk_number}", "Embedded PDF (in XDP)"])
-                res_section.set_heuristic(1)
+                res_section = ResultSection(f"Found {chunk_number} Embedded PDF (in XDP)", heuristic=Heuristic(1))
                 res_section.add_tag('file.behavior', "Embedded PDF (in XDP)")
                 file_res.add_section(res_section)
         return file_res
@@ -81,8 +80,7 @@ class PeePDF(ServiceBase):
         # Filter out large documents
         if os.path.getsize(request.file_path) > self.max_pdf_size:
             res = (ResultSection(f"PDF Analysis of the file was skipped because the "
-                                 f"file is too big (limit is {(self.max_pdf_size / 1000 / 1000)} MB)."))
-
+                                 f"file is too big (limit is {(self.max_pdf_size // 1000000)} MB)."))
             request.result.add_section(res)
             return
 
@@ -90,7 +88,7 @@ class PeePDF(ServiceBase):
         with open(request.file_path, 'rb') as f:
             file_contents = f.read()
 
-        if '<xdp:xdp'.encode(encoding='UTF-8') in file_contents:
+        if b'<xdp:xdp' in file_contents:
             filename = os.path.basename(request.file_path)
             self.find_xdp_embedded(filename, file_contents, request)
 
