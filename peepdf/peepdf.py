@@ -16,15 +16,18 @@ from peepdf.ext.peepdf.PDFCore import PDFParser, vulnsDict
 BANNED_TYPES = ["xref", "objstm", "xobject", "metadata", "3d", "pattern", None]
 
 
-def validate_non_humanreadable_buff(data, buff_min_size=256, whitespace_ratio=0.10):
-    """ Checks if a buffer is human readable using the porportion of whitespace """
+def validate_non_humanreadable_buff(data: str, buff_min_size: int=256, whitespace_ratio: float=0.10) -> bool:
+    """ Checks if a buffer is not human readable using the porportion of whitespace
+
+    data: the buffer
+    buff_min_size: minimum buffer size for the test to be meaningful
+    whitespace_ratio: ratio of whitespace to non-whitespace characters
+
+    returns: if the buffer size is appropriate and contains less whitespace than whitespace_ratio
+    """
     ws_count = data.count(" ")
     ws_count += data.count("%20") * 3
-    if len(data) >= buff_min_size:
-        if ws_count * 1.0 / len(data) < whitespace_ratio:
-            return True
-
-    return False
+    return len(data) >= buff_min_size and ws_count / len(data) < whitespace_ratio
 
 def check_for_function(function: str, data: str) -> bool:
     """ Checks for a function in javascript code
@@ -109,11 +112,11 @@ class PeePDF(ServiceBase):
             if ret == 0:
                 self.peepdf_analysis(pdf_file, file_contents, request)
             else:
-                self.log.warning("Failed to parse file {pdf_file.errors[-1]}")
+                self.log.warning(f"Failed to parse file {pdf_file.errors[-1]}")
                 res = ResultSection("ERROR: Could not parse file with PeePDF.")
                 request.result.add_section(res)
         except Exception as e:
-            self.log.error("PeePDF encountered an error for file {request.sha256}: str{e}"
+            self.log.error(f"PeePDF encountered an error for file {request.sha256}: str{e}")
         finally:
             try:
                 del pdf_file
@@ -188,6 +191,39 @@ class PeePDF(ServiceBase):
 
         return mylist
 
+    def parse_version_stats(self, stats_version: dict) -> dict:
+        """ Parse a PDF versions statistics block into display JSON """
+        v_json_body = {
+            'catalog': stats_version['Catalog'] or "no",
+            'info': stats_version['Info'] or "no",
+            'objects': self.list_first_x(stats_version['Objects'][1]),
+        }
+
+        if stats_version['Compressed Objects']:
+            v_json_body['compressed_objects'] = self.list_first_x(stats_version['Compressed Objects'][1])
+
+        if stats_version['Errors']:
+            v_json_body['errors'] = self.list_first_x(stats_version['Errors'][1])
+
+        v_json_body['streams'] = self.list_first_x(stats_version['Streams'][1])
+
+        if stats_version['Xref Streams']:
+            v_json_body['xref_streams'] = self.list_first_x(stats_version['Xref Streams'][1])
+
+        if stats_version['Object Streams']:
+            v_json_body['object_streams'] = self.list_first_x(stats_version['Object Streams'][1])
+
+        if int(stats_version['Streams'][0]) > 0:
+            v_json_body['encoded'] = self.list_first_x(stats_version['Encoded'][1])
+            if stats_version['Decoding Errors']:
+                v_json_body['decoding_errors'] = self.list_first_x(stats_version['Decoding Errors'][1])
+
+        if stats_version['Objects with JS code']:
+            v_json_body['objects_with_js_code'] = \
+                self.list_first_x(stats_version['Objects with JS code'][1])
+
+        return v_json_body
+
     def analyze_javascript(self, js_code, unescaped_bytes, js_res, obj, request):
         """ Create section for javascript code blocks """
         buffers = False
@@ -196,19 +232,17 @@ class PeePDF(ServiceBase):
         has_eval = check_for_function("eval", js_code)
         has_unescape = check_for_function("unescape", js_code)
         if has_eval:
-            eval_res = ResultSection("[Suspicious Function] eval()", parent=js_res)
+            eval_res = ResultSection("[Suspicious Function] eval()", heuristic=Heuristic(3), parent=js_res)
 
             eval_res.add_line("This JavaScript block uses eval() function "
                                       "which is often used to launch deobfuscated "
                                       "JavaScript code.")
-            eval_res.set_heuristic(3)
         if has_unescape:
-            unescape_res = ResultSection("[Suspicious Function] unescape()", parent=js_res)
+            unescape_res = ResultSection("[Suspicious Function] unescape()", heuristic=Heuristic(4), parent=js_res)
             unescape.add_line("This JavaScript block uses unescape() "
                                       "function. It may be legitimate but it is definitely "
                                       "suspicious since malware often use this to "
                                       "deobfuscate code blocks.")
-            unescape.set_heuristic(4)
 
         # Large Buffers
         big_buffs = self.get_big_buffs(js_code)
@@ -245,7 +279,7 @@ class PeePDF(ServiceBase):
                 buffers = True
 
         # Extract javascript block
-        if has_eval or has_unescape or len(big_buffs > 0):
+        if has_eval or has_unescape or len(big_buffs) > 0:
             js_res.add_tag('file.behaviour', "Suspicious Javascript in PDF")
             temp_js_outname = f"object{obj}-{version}_{js_idx}.js"
             temp_js_path = os.path.join(self.working_directory, temp_js_outname)
@@ -301,65 +335,35 @@ class PeePDF(ServiceBase):
                 'linearized': stats_dict['Linearized'],
                 'encrypted': stats_dict['Encrypted'],
                 'Encryption Algorithms': [f"{algorithm_info[0]} {str(algorithm_info[1])} bits"
-                    for algorithm_info in stats_dict['Encryption Algorithms'],
+                    for algorithm_info in stats_dict['Encryption Algorithms']],
                 'updates': stats_dict['Updates'],
                 'objects': stats_dict['Objects'],
                 'streams': stats_dict['Streams'],
                 'comments': stats_dict['Comments'],
-                'errors': ", ".join(stats_dict['Errors'] if stats_dict['Errors'] else "None"
-                    }
+                'errors': ', '.join(stats_dict['Errors'] if stats_dict['Errors'] else 'None')
+        }
 
         res = ResultSection("PDF File Information", body_format=BODY_FORMAT.KEY_VALUE,
                             body=json.dumps(json_body))
 
-        for version in range(len(stats_dict['Versions'])):
-            stats_version = stats_dict['Versions'][version]
-            v_json_body = dict(
-                catalog=stats_version['Catalog'] or "no",
-                info=stats_version['Info'] or "no",
-                objects=self.list_first_x(stats_version['Objects'][1]),
-            )
-
-            if stats_version['Compressed Objects'] is not None:
-                v_json_body['compressed_objects'] = self.list_first_x(stats_version['Compressed Objects'][1])
-
-            if stats_version['Errors'] is not None:
-                v_json_body['errors'] = self.list_first_x(stats_version['Errors'][1])
-
-            v_json_body['streams'] = self.list_first_x(stats_version['Streams'][1])
-
-            if stats_version['Xref Streams'] is not None:
-                v_json_body['xref_streams'] = self.list_first_x(stats_version['Xref Streams'][1])
-
-            if stats_version['Object Streams'] is not None:
-                v_json_body['object_streams'] = self.list_first_x(stats_version['Object Streams'][1])
-
-            if int(stats_version['Streams'][0]) > 0:
-                v_json_body['encoded'] = self.list_first_x(stats_version['Encoded'][1])
-                if stats_version['Decoding Errors'] is not None:
-                    v_json_body['decoding_errors'] = self.list_first_x(stats_version['Decoding Errors'][1])
-
-            if stats_version['Objects with JS code'] is not None:
-                v_json_body['objects_with_js_code'] = \
-                    self.list_first_x(stats_version['Objects with JS code'][1])
-
+        for version, stats_version in enumerate(stats_dict['Versions']):
             res_version = ResultSection(f"Version {str(version)}", parent=res,
-                                        body_format=BODY_FORMAT.KEY_VALUE, body=json.dumps(v_json_body))
+                    body_format=BODY_FORMAT.KEY_VALUE, body=json.dumps(parse_version_stats(stats_version)))
 
             actions = stats_version['Actions']
             events = stats_version['Events']
             vulns = stats_version['Vulns']
             elements = stats_version['Elements']
-            if events is not None or actions is not None or vulns is not None or elements is not None:
+            if events or actions or vulns or elements:
                 res_suspicious = ResultSection('Suspicious elements', parent=res_version)
                 res_suspicious.set_heuristic(8)
-                if events is not None:
+                if events:
                     for event in events:
                         res_suspicious.add_line(f"{event}: {self.list_first_x(events[event])}")
-                if actions is not None:
+                if actions:
                     for action in actions:
                         res_suspicious.add_line(f"{action}: {self.list_first_x(actions[action])}")
-                if vulns is not None:
+                if vulns:
                     for vuln in vulns:
                         if vuln in vulnsDict:
                             temp = [vuln, ' (']
@@ -379,7 +383,7 @@ class PeePDF(ServiceBase):
                             res_suspicious.add_line(temp)
                         else:
                             res_suspicious.add_line(f"{vuln}: {str(vulns[vuln])}")
-                if elements is not None:
+                if elements:
                     for element in elements:
                         if element in vulnsDict:
                             temp = [element, ' (']
@@ -401,14 +405,12 @@ class PeePDF(ServiceBase):
                             res_suspicious.add_line(f"\t\t{element}: {str(elements[element])}")
 
             urls = stats_version['URLs']
-            if urls is not None:
+            if urls:
                 res.add_line("")
-                res_url = ResultSection('Found URLs', parent=res)
+                res_url = ResultSection('Found URLs', heuristic=Heuristic(9, frequency=len(urls)), parent=res)
                 for url in urls:
                     res_url.add_line(f"\t\t{url}")
-                    res_url.set_heuristic(9)
 
-            buff_heuristic_set = False
             javascript_res = ResultSection("Javascript blocks found")
             for obj in stats_version['Objects'][1]:
                 cur_obj = pdf_file.getObject(obj, version)
@@ -425,8 +427,7 @@ class PeePDF(ServiceBase):
                         buffers = analyze_javascript("".join(js_code), unescaped_bytes, js_res, obj, request)
                         if js_res.subsections:
                             javascript_res.add_subsection(js_res)
-                            if buffers and not buff_heuristic_set:
-                                buff_heuristic_set = True
+                            if buffers and not javascript_res.heuristic:
                                 javascript_res.set_heuristic(2)
 
                 elif cur_obj.type == "stream":
