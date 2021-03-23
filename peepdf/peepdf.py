@@ -26,6 +26,16 @@ def validate_non_humanreadable_buff(data, buff_min_size=256, whitespace_ratio=0.
 
     return False
 
+def check_for_function(function: str, data: str) -> bool:
+    """ Checks for a function in javascript code
+
+    function: the name of the function
+    data: the javascript code
+
+    returns: Whether the code contains the function
+    """
+    return re.search(f'[^a-zA-Z]{function}[^a-zA-Z]', data)
+
 
 # noinspection PyGlobalUndefined
 class PeePDF(ServiceBase):
@@ -168,39 +178,6 @@ class PeePDF(ServiceBase):
         return out
 
     @staticmethod
-    def check_dangerous_func(data):
-        """ Check for the functions eval and unescape """
-        has_eval = False
-        has_unescape = False
-        # eval
-        temp_eval = data.split("eval")
-        if len(temp_eval) > 1:
-            for idx, i in enumerate(temp_eval[:-1]):
-                if (97 <= ord(i[-1]) <= 122) or (65 <= ord(i[-1]) <= 90):
-                    continue
-                if (97 <= ord(temp_eval[idx][0]) <= 122) or \
-                        (65 <= ord(temp_eval[idx][0]) <= 90):
-                    continue
-
-                has_eval = True
-                break
-
-        # unescape
-        temp_unesc = data.split("unescape")
-        if len(temp_unesc) > 1:
-            for idx, i in enumerate(temp_unesc[:-1]):
-                if (97 <= ord(i[-1]) <= 122) or (65 <= ord(i[-1]) <= 90):
-                    continue
-                if (97 <= ord(temp_unesc[idx][0]) <= 122) or \
-                        (65 <= ord(temp_unesc[idx][0]) <= 90):
-                    continue
-
-                has_unescape = True
-                break
-
-        return has_eval, has_unescape
-
-    @staticmethod
     def list_first_x(mylist, size=20):
         """ Truncate list for display """
         add_reminder = len(mylist) > size
@@ -216,7 +193,8 @@ class PeePDF(ServiceBase):
         buffers = False
 
         # Check for Eval and Unescape
-        has_eval, has_unescape = self.check_dangerous_func(js_code)
+        has_eval = check_for_function("eval", js_code)
+        has_unescape = check_for_function("unescape", js_code)
         if has_eval:
             eval_res = ResultSection("[Suspicious Function] eval()", parent=js_res)
 
