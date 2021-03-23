@@ -314,6 +314,75 @@ class PeePDF(ServiceBase):
 
         return buffers
 
+    def analyze_stream(self, cur_obj):
+        """ Analyze PDF streams """
+        if cur_obj.isEncodedStream and cur_obj.filter is not None:
+            data = cur_obj.decodedStream
+            encoding = cur_obj.filter.value.replace("[", "").replace("]", "").replace("/",
+                                                                                      "").strip()
+            val = cur_obj.rawValue
+            otype = cur_obj.elements.get("/Type", None)
+            sub_type = cur_obj.elements.get("/Subtype", None)
+            length = cur_obj.elements.get("/Length", None)
+
+        else:
+            data = cur_obj.rawStream
+            encoding = None
+            val = cur_obj.rawValue
+            otype = cur_obj.elements.get("/Type", None)
+            sub_type = cur_obj.elements.get("/Subtype", None)
+            length = cur_obj.elements.get("/Length", None)
+
+        if otype:
+            otype = otype.value.replace("/", "").lower()
+        if sub_type:
+            sub_type = sub_type.value.replace("/", "").lower()
+        if length:
+            length = length.value
+
+        if otype == "embeddedfile":
+            if len(data) > 4096:
+                if encoding is not None:
+                    temp_encoding_str = f"_{encoding}"
+                else:
+                    temp_encoding_str = ""
+
+                cur_res = ResultSection(
+                    f'Embedded file found ({length} bytes) [obj: {obj} {version}] '
+                    f'and dumped for analysis {f"(Type: {otype}) " if otype is not None else ""}'
+                    f'{f"(SubType: {sub_type}) " if sub_type is not None else ""}'
+                    f'{f"(Encoded with {encoding})" if encoding is not None else ""}'
+                )
+
+                temp_path_name = f"EmbeddedFile_{obj}{temp_encoding_str}.obj"
+                temp_path = os.path.join(self.working_directory, temp_path_name)
+                with open(temp_path, "wb") as f:
+                    if isinstance(data, str):
+                        data = data.encode()
+                    f.write(data)
+                f_list.append(temp_path)
+
+                cur_res.add_line(f"The EmbeddedFile object was saved as {temp_path_name}")
+                res_list.append(cur_res)
+
+        elif otype not in BANNED_TYPES:
+            cur_res = ResultSection(
+                f'Unknown stream found [obj: {obj} {version}] '
+                f'{f"(Type: {otype}) " if otype is not None else ""}'
+                f'{f"(SubType: {sub_type}) " if sub_type is not None else ""}'
+                f'{f"(Encoded with {encoding})" if encoding is not None else ""}'
+            )
+            for line in val.splitlines():
+                cur_res.add_line(line)
+
+            emb_res = ResultSection('First 256 bytes', parent=cur_res)
+            first_256 = data[:256]
+            if isinstance(first_256, str):
+                first_256 = first_256.encode()
+            emb_res.set_body(hexdump(first_256), BODY_FORMAT.MEMORY_DUMP)
+            res_list.append(cur_res)
+
+
     # noinspection PyBroadException,PyUnboundLocalVariable
     def peepdf_analysis(self, pdf_file, file_content, request):
         """ Analyze parsed pdf file """
@@ -344,7 +413,7 @@ class PeePDF(ServiceBase):
         }
 
         res = ResultSection("PDF File Information", body_format=BODY_FORMAT.KEY_VALUE,
-                            body=json.dumps(json_body))
+                            body=json.dumps(json_body), parent=file_res)
 
         for version, stats_version in enumerate(stats_dict['Versions']):
             res_version = ResultSection(f"Version {str(version)}", parent=res,
@@ -431,76 +500,9 @@ class PeePDF(ServiceBase):
                                 javascript_res.set_heuristic(2)
 
                 elif cur_obj.type == "stream":
-                    if cur_obj.isEncodedStream and cur_obj.filter is not None:
-                        data = cur_obj.decodedStream
-                        encoding = cur_obj.filter.value.replace("[", "").replace("]", "").replace("/",
-                                                                                                  "").strip()
-                        val = cur_obj.rawValue
-                        otype = cur_obj.elements.get("/Type", None)
-                        sub_type = cur_obj.elements.get("/Subtype", None)
-                        length = cur_obj.elements.get("/Length", None)
-
-                    else:
-                        data = cur_obj.rawStream
-                        encoding = None
-                        val = cur_obj.rawValue
-                        otype = cur_obj.elements.get("/Type", None)
-                        sub_type = cur_obj.elements.get("/Subtype", None)
-                        length = cur_obj.elements.get("/Length", None)
-
-                    if otype:
-                        otype = otype.value.replace("/", "").lower()
-                    if sub_type:
-                        sub_type = sub_type.value.replace("/", "").lower()
-                    if length:
-                        length = length.value
-
-                    if otype == "embeddedfile":
-                        if len(data) > 4096:
-                            if encoding is not None:
-                                temp_encoding_str = f"_{encoding}"
-                            else:
-                                temp_encoding_str = ""
-
-                            cur_res = ResultSection(
-                                f'Embedded file found ({length} bytes) [obj: {obj} {version}] '
-                                f'and dumped for analysis {f"(Type: {otype}) " if otype is not None else ""}'
-                                f'{f"(SubType: {sub_type}) " if sub_type is not None else ""}'
-                                f'{f"(Encoded with {encoding})" if encoding is not None else ""}'
-                            )
-
-                            temp_path_name = f"EmbeddedFile_{obj}{temp_encoding_str}.obj"
-                            temp_path = os.path.join(self.working_directory, temp_path_name)
-                            with open(temp_path, "wb") as f:
-                                if isinstance(data, str):
-                                    data = data.encode()
-                                f.write(data)
-                            f_list.append(temp_path)
-
-                            cur_res.add_line(f"The EmbeddedFile object was saved as {temp_path_name}")
-                            res_list.append(cur_res)
-
-                    elif otype not in BANNED_TYPES:
-                        cur_res = ResultSection(
-                            f'Unknown stream found [obj: {obj} {version}] '
-                            f'{f"(Type: {otype}) " if otype is not None else ""}'
-                            f'{f"(SubType: {sub_type}) " if sub_type is not None else ""}'
-                            f'{f"(Encoded with {encoding})" if encoding is not None else ""}'
-                        )
-                        for line in val.splitlines():
-                            cur_res.add_line(line)
-
-                        emb_res = ResultSection('First 256 bytes', parent=cur_res)
-                        first_256 = data[:256]
-                        if isinstance(first_256, str):
-                            first_256 = first_256.encode()
-                        emb_res.set_body(hexdump(first_256), BODY_FORMAT.MEMORY_DUMP)
-                        res_list.append(cur_res)
-                else:
-                    pass
+                    self.analyze_stream(cur_obj)
             if javascript_res.subsections:
                 file_res.add_section(javascript_res)
-        file_res.add_section(res)
 
         for results in res_list:
             file_res.add_section(results)
