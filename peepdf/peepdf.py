@@ -186,12 +186,9 @@ class PeePDF(ServiceBase):
     @staticmethod
     def list_first_x(mylist, size=20):
         """ Truncate list for display """
-        add_reminder = len(mylist) > size
-
-        mylist = mylist[:size]
-        if add_reminder:
+        if len(mylist) > size:
+            mylist = mylist[:size]
             mylist.append("...")
-
         return mylist
 
     def parse_version_stats(self, stats_version: dict) -> dict:
@@ -226,6 +223,32 @@ class PeePDF(ServiceBase):
                 self.list_first_x(stats_version['Objects with JS code'][1])
 
         return v_json_body
+
+    def parse_vulnerability(self, vuln, value, res: ResultSection):
+        """ Parse vulnerability info from vulnsDict and add it to a ResultSection
+
+        vuln: vulnerability key
+        value: the vulnerability value
+        res: the ResultSection
+        """
+        if vuln in vulnsDict:
+            temp = [vuln, ' (']
+            for vuln_cve in vulnsDict[vuln]:
+                if len(temp) != 2:
+                    temp.append(',')
+                vuln_cve = "".join(vuln_cve) if isinstance(vuln_cve, list) else vuln_cve
+                temp.append(vuln_cve)
+                cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vuln_cve)
+                if cve_found and cve_found.group() not in self.CVE_FALSE_POSITIVES:
+                    vuln_name = cve_found.group()
+                    res.add_tag('attribution.exploit', vuln_name)
+                    res.add_tag('file.behavior', vuln_name)
+                    res.heuristic.add_signature_id(vuln_name, score=500)
+            temp.append('): ')
+            temp.append(str(value))
+            res.add_line(temp)
+        else:
+            res.add_line(f"{vuln}: {str(value)}")
 
     def analyze_javascript(self, js_code, unescaped_bytes, js_res, obj, request):
         """ Create section for javascript code blocks """
@@ -300,63 +323,52 @@ class PeePDF(ServiceBase):
         """ Analyze PDF streams """
         if cur_obj.isEncodedStream and cur_obj.filter is not None:
             data = cur_obj.decodedStream
-            encoding = cur_obj.filter.value.replace("[", "").replace("]", "").replace("/",
-                                                                                      "").strip()
-            val = cur_obj.rawValue
-            otype = cur_obj.elements.get("/Type", None)
-            sub_type = cur_obj.elements.get("/Subtype", None)
-            length = cur_obj.elements.get("/Length", None)
-
+            encoding = ''.join(c for c in cur_obj.filter.value if c not in '[]/').strip()
         else:
             data = cur_obj.rawStream
             encoding = None
-            val = cur_obj.rawValue
-            otype = cur_obj.elements.get("/Type", None)
-            sub_type = cur_obj.elements.get("/Subtype", None)
-            length = cur_obj.elements.get("/Length", None)
+
+        if isinstance(data, str):
+            data = data.encode()
+
+        val = cur_obj.rawValue
+        otype = cur_obj.elements.get('/Type', None)
+        sub_type = cur_obj.elements.get('/Subtype', None)
+        length = cur_obj.elements.get('/Length', None)
 
         if otype:
-            otype = otype.value.replace("/", "").lower()
+            otype = otype.value.replace('/', '').lower()
         if sub_type:
-            sub_type = sub_type.value.replace("/", "").lower()
+            sub_type = sub_type.value.replace('/', '').lower()
         if length:
             length = length.value
 
-        if otype == "embeddedfile":
+        if otype == 'embeddedfile':
             if len(data) > 4096:
-                if encoding is not None:
-                    temp_encoding_str = f"_{encoding}"
-                else:
-                    temp_encoding_str = ""
-
                 cur_res = ResultSection(
-                    f'Embedded file found ({length} bytes) [obj: {obj_name} {version}] '
-                    f'and dumped for analysis {f"(Type: {otype}) " if otype is not None else ""}'
-                    f'{f"(SubType: {sub_type}) " if sub_type is not None else ""}'
-                    f'{f"(Encoded with {encoding})" if encoding is not None else ""}'
+                    [f'Embedded file found ({length} bytes) [obj: {obj_name} {version}] ',
+                    'and dumped for analysis (Type: embeddedfile)',
+                    f'(SubType: {sub_type}) ' if sub_type else '',
+                    f'(Encoded with {encoding})' if encoding else '',]
                 )
 
-                temp_path_name = f"EmbeddedFile_{obj_name}{temp_encoding_str}.obj"
-                self.extract(data.encode() if isinstance(data, str) else data,
-                        temp_path_name, request)
-                cur_res.add_line(f"The EmbeddedFile object was saved as {temp_path_name}")
+                temp_path_name = f'EmbeddedFile_{obj_name}' + (f'_{encoding}' if encoding else '') + '.obj'
+                self.extract(data, temp_path_name, request)
+                cur_res.add_line(f'The EmbeddedFile object was saved as {temp_path_name}')
                 request.result.add_section(cur_res)
 
         elif otype not in BANNED_TYPES:
             cur_res = ResultSection(
-                f'Unknown stream found [obj: {obj_name} {version}] '
-                f'{f"(Type: {otype}) " if otype is not None else ""}'
-                f'{f"(SubType: {sub_type}) " if sub_type is not None else ""}'
-                f'{f"(Encoded with {encoding})" if encoding is not None else ""}'
+                [f'Unknown stream found [obj: {obj_name} {version}] ',
+                f'(Type: {otype}) ' if otype else '',
+                f'(SubType: {sub_type}) ' if sub_type else '',
+                f'(Encoded with {encoding})' if encoding else '']
             )
             for line in val.splitlines():
                 cur_res.add_line(line)
 
             emb_res = ResultSection('First 256 bytes', parent=cur_res)
-            first_256 = data[:256]
-            if isinstance(first_256, str):
-                first_256 = first_256.encode()
-            emb_res.set_body(hexdump(first_256), BODY_FORMAT.MEMORY_DUMP)
+            emb_res.set_body(hexdump(data[:256]), BODY_FORMAT.MEMORY_DUMP)
             request.result.add_section(cur_res)
 
 
@@ -409,46 +421,11 @@ class PeePDF(ServiceBase):
                     for action in actions:
                         res_suspicious.add_line(f"{action}: {self.list_first_x(actions[action])}")
                 if vulns:
-                    for vuln in vulns:
-                        if vuln in vulnsDict:
-                            temp = [vuln, ' (']
-                            for vuln_cve in vulnsDict[vuln]:
-                                if len(temp) != 2:
-                                    temp.append(',')
-                                vuln_cve = "".join(vuln_cve) if isinstance(vuln_cve, list) else vuln_cve
-                                temp.append(vuln_cve)
-                                cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vuln_cve)
-                                if cve_found and cve_found.group() not in self.CVE_FALSE_POSITIVES:
-                                    vuln_name = cve_found.group()
-                                    res_suspicious.add_tag('attribution.exploit', vuln_name)
-                                    res_suspicious.add_tag('file.behavior', vuln_name)
-                                    res_suspicious.heuristic.add_signature_id(vuln_name, score=500)
-                            temp.append('): ')
-                            temp.append(str(vulns[vuln]))
-                            res_suspicious.add_line(temp)
-                        else:
-                            res_suspicious.add_line(f"{vuln}: {str(vulns[vuln])}")
+                    for vuln, value in vulns.items():
+                        self.parse_vulnerability(vuln, value, res_suspicious)
                 if elements:
-                    for element in elements:
-                        if element in vulnsDict:
-                            temp = [element, ' (']
-                            for vuln_cve in vulnsDict[element]:
-                                if len(temp) != 2:
-                                    temp.append(',')
-                                vuln_cve = "".join(vuln_cve) if isinstance(vuln_cve, list) else vuln_cve
-                                temp.append(vuln_cve)
-                                cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vuln_cve)
-                                if cve_found and cve_found.group() not in self.CVE_FALSE_POSITIVES:
-                                    vuln_name = cve_found.group()
-                                    res_suspicious.add_tag('attribution.exploit', vuln_name)
-                                    res_suspicious.add_tag('file.behavior', vuln_name)
-                                    res_suspicious.heuristic.add_signature_id(vuln_name, score=500)
-                            temp.append('): ')
-                            temp.append(str(elements[element]))
-                            res_suspicious.add_line(temp)
-                        else:
-                            res_suspicious.add_line(f"\t\t{element}: {str(elements[element])}")
-
+                    for element, value in elements.items():
+                        self.parse_vulnerability(element, value, res_suspicious)
             urls = stats_version['URLs']
             if urls:
                 res.add_line("")
