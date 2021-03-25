@@ -49,9 +49,10 @@ class PeePDF(ServiceBase):
         super().__init__(config)
         self.max_pdf_size = self.config.get('max_pdf_size', 3000000)
 
-    def extract(self, data: bytes, filename: str, request,
-            description="Dumped from {os.path.basename(request.file_path)}"):
+    def extract(self, data: bytes, filename: str, request, description: str=''):
         """ Extract data as filename in the current working directory and add to request """
+        if not description:
+            description = f"Dumped from {os.path.basename(request.file_path)}"
         file_path = os.path.join(self.working_directory, filename)
         with open(file_path, 'wb') as f:
             f.write(data)
@@ -383,7 +384,7 @@ class PeePDF(ServiceBase):
                 'binary': stats_dict['Binary'],
                 'linearized': stats_dict['Linearized'],
                 'encrypted': stats_dict['Encrypted'],
-                'Encryption Algorithms': [f"{algorithm_info[0]} {str(algorithm_info[1])} bits"
+                'encryption_algorithms': [f"{algorithm_info[0]} {str(algorithm_info[1])} bits"
                     for algorithm_info in stats_dict['Encryption Algorithms']],
                 'updates': stats_dict['Updates'],
                 'objects': stats_dict['Objects'],
@@ -391,6 +392,8 @@ class PeePDF(ServiceBase):
                 'comments': stats_dict['Comments'],
                 'errors': ', '.join(stats_dict['Errors'] if stats_dict['Errors'] else 'None')
         }
+        if not json_body['encryption_algorithms']:
+            del json_body['encryption_algorithms']
 
         res = ResultSection("PDF File Information", body_format=BODY_FORMAT.KEY_VALUE,
                             body=json.dumps(json_body), parent=request.result)
