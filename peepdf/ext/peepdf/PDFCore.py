@@ -94,7 +94,8 @@ vulnsDict = {'mailto': ('mailto', ['CVE-2007-5020']),
              'doc.printSeps': ('doc.printSeps', ['CVE-2010-4091']),
              '/U3D': ('/U3D', ['CVE-2009-3953', 'CVE-2009-3959', 'CVE-2011-2462']),
              '/PRC': ('/PRC', ['CVE-2011-4369']),
-             'keep.previous': ('Adobe Reader XFA oneOfChild Un-initialized memory vulnerability', ['CVE-2013-0640']),  # https://labs.portcullis.co.uk/blog/cve-2013-0640-adobe-reader-xfa-oneofchild-un-initialized-memory-vulnerability-part-1/
+             # https://labs.portcullis.co.uk/blog/cve-2013-0640-adobe-reader-xfa-oneofchild-un-initialized-memory-vulnerability-part-1/
+             'keep.previous': ('Adobe Reader XFA oneOfChild Un-initialized memory vulnerability', ['CVE-2013-0640']),
              bmpVuln: (bmpVuln, ['CVE-2013-2729']),
              'app.removeToolButton': ('app.removeToolButton', ['CVE-2013-3346'])}
 jsContexts = {'global': None}
@@ -146,7 +147,7 @@ class PDFObject:
         value = str(self.value)
         rawValue = str(self.rawValue)
         encValue = str(self.encryptedValue)
-        if re.findall(string, value, re.IGNORECASE) != [] or re.findall(string, rawValue, re.IGNORECASE) != [] or re.findall(string, encValue, re.IGNORECASE) != []:
+        if any(re.findall(string, body, re.IGNORECASE) for body in [value, rawValue, encValue]):
             return True
         if self.containsJS():
             for js in self.JSCode:
@@ -641,7 +642,8 @@ class PDFString(PDFObject):
             return (-1, errorMessage)
         if isJavascript(self.value) or self.referencedJSObject:
             self.containsJScode = True
-            self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(self.value, jsContexts['global'], isManualAnalysis)
+            self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(
+                self.value, jsContexts['global'], isManualAnalysis)
             if jsErrors != []:
                 for jsError in jsErrors:
                     errorMessage = 'Error analysing Javascript: ' + jsError
@@ -799,7 +801,8 @@ class PDFHexString(PDFObject):
                 return (-1, errorMessage)
         if isJavascript(self.value) or self.referencedJSObject:
             self.containsJScode = True
-            self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(self.value, jsContexts['global'], isManualAnalysis)
+            self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(
+                self.value, jsContexts['global'], isManualAnalysis)
             if jsErrors != []:
                 for jsError in jsErrors:
                     errorMessage = 'Error analysing Javascript: ' + jsError
@@ -1861,7 +1864,8 @@ class PDFStream(PDFDictionary):
                         self.references = list(set(self.references))
                     if isJavascript(self.decodedStream) or self.referencedJSObject:
                         self.containsJScode = True
-                        self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(self.decodedStream, jsContexts['global'], isManualAnalysis)
+                        self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(
+                            self.decodedStream, jsContexts['global'], isManualAnalysis)
                         if jsErrors != []:
                             for jsError in jsErrors:
                                 errorMessage = 'Error analysing Javascript: ' + jsError
@@ -1960,7 +1964,8 @@ class PDFStream(PDFDictionary):
                                 self.references = list(set(self.references))
                             if isJavascript(self.decodedStream) or self.referencedJSObject:
                                 self.containsJScode = True
-                                self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(self.decodedStream, jsContexts['global'], isManualAnalysis)
+                                self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(
+                                    self.decodedStream, jsContexts['global'], isManualAnalysis)
                                 if jsErrors != []:
                                     for jsError in jsErrors:
                                         errorMessage = 'Error analysing Javascript: ' + jsError
@@ -2031,7 +2036,8 @@ class PDFStream(PDFDictionary):
                                 self.references = list(set(self.references))
                             if isJavascript(self.decodedStream) or self.referencedJSObject:
                                 self.containsJScode = True
-                                self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(self.decodedStream, jsContexts['global'], isManualAnalysis)
+                                self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(
+                                    self.decodedStream, jsContexts['global'], isManualAnalysis)
                                 if jsErrors != []:
                                     for jsError in jsErrors:
                                         errorMessage = 'Error analysing Javascript: ' + jsError
@@ -2118,7 +2124,8 @@ class PDFStream(PDFDictionary):
         rawStream = str(self.rawStream)
         encStream = str(self.encodedStream)
         decStream = str(self.decodedStream)
-        if re.findall(string, value, re.IGNORECASE) != [] or re.findall(string, rawValue, re.IGNORECASE) != [] or re.findall(string, encValue, re.IGNORECASE) != [] or re.findall(string, rawStream, re.IGNORECASE) != [] or re.findall(string, encStream, re.IGNORECASE) != [] or re.findall(string, decStream, re.IGNORECASE) != []:
+        if any(re.findall(string, body, re.IGNORECASE)
+               for body in [value, rawValue, encValue, rawStream, encStream, decStream]):
             return True
         if self.containsJS():
             for js in self.JSCode:
@@ -2164,7 +2171,9 @@ class PDFStream(PDFDictionary):
                         ret = decodeStream(self.encodedStream, self.filter.getValue(), self.filterParams.getElements())
                         if ret[0] == -1:
                             if self.rawStream != self.encodedStream:
-                                ret = decodeStream(self.rawStream, self.filter.getValue(), self.filterParams.getElements())
+                                ret = decodeStream(
+                                    self.rawStream, self.filter.getValue(),
+                                    self.filterParams.getElements())
                             if ret[0] == -1:
                                 self.decodingError = True
                                 errorMessage = 'Decoding error: ' + ret[1]
@@ -2622,7 +2631,8 @@ class PDFStream(PDFDictionary):
             self.references = list(set(self.references))
         if isJavascript(self.decodedStream) or self.referencedJSObject:
             self.containsJScode = True
-            self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(self.decodedStream, jsContexts['global'], isManualAnalysis)
+            self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(
+                self.decodedStream, jsContexts['global'], isManualAnalysis)
             if jsErrors != []:
                 for jsError in jsErrors:
                     errorMessage = 'Error analysing Javascript: ' + jsError
@@ -3139,7 +3149,8 @@ class PDFObjectStream(PDFStream):
                             self.references = list(set(self.references))
                         if isJavascript(self.decodedStream) or self.referencedJSObject:
                             self.containsJScode = True
-                            self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(self.decodedStream, jsContexts['global'], isManualAnalysis)
+                            self.JSCode, self.unescapedBytes, self.urlsFound, jsErrors, jsContexts['global'] = analyseJS(
+                                self.decodedStream, jsContexts['global'], isManualAnalysis)
                             if jsErrors != []:
                                 for jsError in jsErrors:
                                     errorMessage = 'Error analysing Javascript: ' + jsError
@@ -3260,8 +3271,8 @@ class PDFObjectStream(PDFStream):
                 numbers = re.findall('\d{1,10}', offsetsSection)
                 if numbers != [] and len(numbers) % 2 == 0:
                     for i in range(0, len(numbers), 2):
-                        offset = numbers[i + 1]
-                        ret = PDFParser.readObject(objectsSection[offset:])
+                        offset = int(numbers[i + 1])
+                        ret = PDFParser().readObject(objectsSection[offset:])
                         if ret[0] == -1:
                             if isForceMode:
                                 object = None
@@ -4368,7 +4379,8 @@ class PDFBody:
                     self.suspiciousEvents[printedEvent] = [id]
         for action in monitorizedActions:
             index = value.find(action)
-            if index != -1 and (action == '/JS ' or len(value) == index + len(action) or value[index + len(action)] in delimiterChars + spacesChars):
+            if index != -1 and (action == '/JS ' or len(value) == index +
+                                len(action) or value[index + len(action)] in delimiterChars + spacesChars):
                 printedAction = action.strip()
                 if printedAction in self.suspiciousActions:
                     if delete:
@@ -4380,7 +4392,8 @@ class PDFBody:
                     self.suspiciousActions[printedAction] = [id]
         for element in monitorizedElements:
             index = value.find(element)
-            if index != -1 and (element == '/EmbeddedFiles ' or len(value) == index + len(element) or value[index + len(element)] in delimiterChars + spacesChars):
+            if index != -1 and (element == '/EmbeddedFiles ' or len(value) == index +
+                                len(element) or value[index + len(element)] in delimiterChars + spacesChars):
                 printedElement = element.strip()
                 if printedElement in self.suspiciousElements:
                     if delete:
@@ -5253,7 +5266,8 @@ class PDFFile:
                         encryptionAlgorithms.append(stmAlgorithm)
                     if strAlgorithm not in encryptionAlgorithms:
                         encryptionAlgorithms.append(strAlgorithm)
-                    if embedAlgorithm not in encryptionAlgorithms and embedAlgorithm != ['Identity', 40]:  # Not showing default embedAlgorithm
+                    if embedAlgorithm not in encryptionAlgorithms and embedAlgorithm != [
+                            'Identity', 40]:  # Not showing default embedAlgorithm
                         encryptionAlgorithms.append(embedAlgorithm)
             else:
                 errorMessage = 'Decryption error: Bad format for /V!!'
@@ -5481,7 +5495,8 @@ class PDFFile:
         self.setOwnerPass(dictO)
         self.setUserPass(dictU)
         if not fatalError and not badPassword:
-            ret = computeEncryptionKey(password, dictO, dictU, dictOE, dictUE, fileId, perm, keyLength, revision, encryptMetadata, passType)
+            ret = computeEncryptionKey(password, dictO, dictU, dictOE, dictUE, fileId,
+                                       perm, keyLength, revision, encryptMetadata, passType)
             if ret[0] != -1:
                 encryptionKey = ret[1]
             else:
@@ -5514,7 +5529,8 @@ class PDFFile:
                                 # Computing keys and decrypting objects
                                 if objectType in ['string', 'hexstring', 'array', 'dictionary']:
                                     if revision < 5:
-                                        ret = computeObjectKey(id, generationNum, self.encryptionKey, numKeyBytes, strAlgorithm[0])
+                                        ret = computeObjectKey(id, generationNum, self.encryptionKey,
+                                                               numKeyBytes, strAlgorithm[0])
                                         if ret[0] == -1:
                                             errorMessage = ret[1]
                                             self.addError(ret[1])
@@ -5524,7 +5540,8 @@ class PDFFile:
                                 else:
                                     if object.getElement('/Type') is not None and object.getElement('/Type').getValue() == '/EmbeddedFile':
                                         if revision < 5:
-                                            ret = computeObjectKey(id, generationNum, self.encryptionKey, numKeyBytes, embedAlgorithm[0])
+                                            ret = computeObjectKey(
+                                                id, generationNum, self.encryptionKey, numKeyBytes, embedAlgorithm[0])
                                             if ret[0] == -1:
                                                 errorMessage = ret[1]
                                                 self.addError(ret[1])
@@ -5533,7 +5550,8 @@ class PDFFile:
                                         altAlgorithm = embedAlgorithm[0]
                                     else:
                                         if revision < 5:
-                                            ret = computeObjectKey(id, generationNum, self.encryptionKey, numKeyBytes, stmAlgorithm[0])
+                                            ret = computeObjectKey(
+                                                id, generationNum, self.encryptionKey, numKeyBytes, stmAlgorithm[0])
                                             if ret[0] == -1:
                                                 errorMessage = ret[1]
                                                 self.addError(ret[1])
@@ -6257,7 +6275,9 @@ class PDFFile:
             else:
                 statsVersion['Object Streams'] = None
             if numStreams > 0:
-                statsVersion['Encoded'] = [str(self.body[version].getNumEncodedStreams()), self.body[version].getEncodedStreams()]
+                statsVersion['Encoded'] = [
+                    str(self.body[version].getNumEncodedStreams()),
+                    self.body[version].getEncodedStreams()]
                 numDecodingErrors = self.body[version].getNumDecodingErrors()
                 if numDecodingErrors > 0:
                     statsVersion['Decoding Errors'] = [str(numDecodingErrors), self.body[version].getFaultyStreams()]
@@ -8177,7 +8197,8 @@ class PDFParser:
             @param symbol
             @return A tuple (status,statusContent), where statusContent is the characters read in case status = 0 or an error in case status = -1
         '''
-        if not ((isinstance(string, bytes) and isinstance(symbol, bytes)) or (isinstance(string, str) and isinstance(symbol, str))):
+        if not((isinstance(string, bytes) and isinstance(symbol, bytes))
+               or (isinstance(string, str) and isinstance(symbol, str))):
             return (-1, 'Bad string')
 
         newString = string[self.charCounter:]

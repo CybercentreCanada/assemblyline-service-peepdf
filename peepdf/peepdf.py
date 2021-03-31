@@ -16,7 +16,7 @@ from peepdf.ext.peepdf.PDFCore import PDFParser, vulnsDict
 BANNED_TYPES = ["xref", "objstm", "xobject", "metadata", "3d", "pattern", None]
 
 
-def validate_non_humanreadable_buff(data: str, buff_min_size: int=256, whitespace_ratio: float=0.10) -> bool:
+def validate_non_humanreadable_buff(data: str, buff_min_size: int = 256, whitespace_ratio: float = 0.10) -> bool:
     """ Checks if a buffer is not human readable using the porportion of whitespace
 
     data: the buffer
@@ -28,6 +28,7 @@ def validate_non_humanreadable_buff(data: str, buff_min_size: int=256, whitespac
     ws_count = data.count(" ")
     ws_count += data.count("%20") * 3
     return len(data) >= buff_min_size and ws_count / len(data) < whitespace_ratio
+
 
 def check_for_function(function: str, data: str) -> bool:
     """ Checks for a function in javascript code
@@ -49,7 +50,7 @@ class PeePDF(ServiceBase):
         super().__init__(config)
         self.max_pdf_size = self.config.get('max_pdf_size', 3000000)
 
-    def extract(self, data: bytes, filename: str, request, description: str=''):
+    def extract(self, data: bytes, filename: str, request, description: str = ''):
         """ Extract data as filename in the current working directory and add to request """
         if not description:
             description = f"Dumped from {os.path.basename(request.file_path)}"
@@ -83,7 +84,7 @@ class PeePDF(ServiceBase):
 
                 if un_b64:
                     self.extract(un_b64, f'xdp_{chunk_number}.pdf', request,
-                            description=f'UnXDP from {os.path.basename(request.file_path)}')
+                                 description=f'UnXDP from {os.path.basename(request.file_path)}')
 
             if chunk_number > 0:
                 res_section = ResultSection(f"Found {chunk_number} Embedded PDF (in XDP)", heuristic=Heuristic(1))
@@ -257,14 +258,14 @@ class PeePDF(ServiceBase):
             eval_res = ResultSection("[Suspicious Function] eval()", heuristic=Heuristic(3), parent=js_res)
 
             eval_res.add_line("This JavaScript block uses eval() function "
-                                      "which is often used to launch deobfuscated "
-                                      "JavaScript code.")
+                              "which is often used to launch deobfuscated "
+                              "JavaScript code.")
         if check_for_function("unescape", js_code):
             unescape_res = ResultSection("[Suspicious Function] unescape()", heuristic=Heuristic(4), parent=js_res)
             unescape_res.add_line("This JavaScript block uses unescape() "
-                                      "function. It may be legitimate but it is definitely "
-                                      "suspicious since malware often use this to "
-                                      "deobfuscate code blocks.")
+                                  "function. It may be legitimate but it is definitely "
+                                  "suspicious since malware often use this to "
+                                  "deobfuscate code blocks.")
 
         # Large Buffers
         for buff_index, buff in enumerate(self.get_big_buffs(js_code)):
@@ -341,9 +342,9 @@ class PeePDF(ServiceBase):
             if len(data) > 4096:
                 cur_res = ResultSection(
                     [f'Embedded file found ({length} bytes) [obj: {obj_name} {version}] ',
-                    'and dumped for analysis (Type: embeddedfile)',
-                    f'(SubType: {sub_type}) ' if sub_type else '',
-                    f'(Encoded with {encoding})' if encoding else '',]
+                     'and dumped for analysis (Type: embeddedfile)',
+                     f'(SubType: {sub_type}) ' if sub_type else '',
+                     f'(Encoded with {encoding})' if encoding else '', ]
                 )
 
                 temp_path_name = f'EmbeddedFile_{obj_name}' + (f'_{encoding}' if encoding else '') + '.obj'
@@ -354,9 +355,9 @@ class PeePDF(ServiceBase):
         elif otype not in BANNED_TYPES:
             cur_res = ResultSection(
                 [f'Unknown stream found [obj: {obj_name} {version}] ',
-                f'(Type: {otype}) ' if otype else '',
-                f'(SubType: {sub_type}) ' if sub_type else '',
-                f'(Encoded with {encoding})' if encoding else '']
+                 f'(Type: {otype}) ' if otype else '',
+                 f'(SubType: {sub_type}) ' if sub_type else '',
+                 f'(Encoded with {encoding})' if encoding else '']
             )
             for line in val.splitlines():
                 cur_res.add_line(line)
@@ -365,8 +366,8 @@ class PeePDF(ServiceBase):
             emb_res.set_body(hexdump(data[:256]), BODY_FORMAT.MEMORY_DUMP)
             request.result.add_section(cur_res)
 
-
     # noinspection PyBroadException,PyUnboundLocalVariable
+
     def peepdf_analysis(self, pdf_file, request):
         """ Analyze parsed pdf file """
         js_dump = []
@@ -379,17 +380,17 @@ class PeePDF(ServiceBase):
             return
 
         json_body = {
-                'version': stats_dict['Version'],
-                'binary': stats_dict['Binary'],
-                'linearized': stats_dict['Linearized'],
-                'encrypted': stats_dict['Encrypted'],
-                'encryption_algorithms': [f"{algorithm_info[0]} {str(algorithm_info[1])} bits"
-                    for algorithm_info in stats_dict['Encryption Algorithms']],
-                'updates': stats_dict['Updates'],
-                'objects': stats_dict['Objects'],
-                'streams': stats_dict['Streams'],
-                'comments': stats_dict['Comments'],
-                'errors': ', '.join(stats_dict['Errors'] if stats_dict['Errors'] else 'None')
+            'version': stats_dict['Version'],
+            'binary': stats_dict['Binary'],
+            'linearized': stats_dict['Linearized'],
+            'encrypted': stats_dict['Encrypted'],
+            'encryption_algorithms': [f"{algorithm_info[0]} {str(algorithm_info[1])} bits"
+                                      for algorithm_info in stats_dict['Encryption Algorithms']],
+            'updates': stats_dict['Updates'],
+            'objects': stats_dict['Objects'],
+            'streams': stats_dict['Streams'],
+            'comments': stats_dict['Comments'],
+            'errors': ', '.join(stats_dict['Errors'] if stats_dict['Errors'] else 'None')
         }
         if not json_body['encryption_algorithms']:
             del json_body['encryption_algorithms']
@@ -398,8 +399,9 @@ class PeePDF(ServiceBase):
                             body=json.dumps(json_body), parent=request.result)
 
         for version, stats_version in enumerate(stats_dict['Versions']):
-            res_version = ResultSection(f"Version {str(version)}", parent=res,
-                    body_format=BODY_FORMAT.KEY_VALUE, body=json.dumps(self.parse_version_stats(stats_version)))
+            res_version = ResultSection(
+                f"Version {str(version)}", parent=res, body_format=BODY_FORMAT.KEY_VALUE, body=json.dumps(
+                    self.parse_version_stats(stats_version)))
 
             actions = stats_version['Actions']
             events = stats_version['Events']
