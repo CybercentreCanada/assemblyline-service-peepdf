@@ -7361,7 +7361,11 @@ class PDFParser:
             name = ret[1]
         while name is not None:
             key = name.getValue()
-            rawNames[key] = name
+            if key not in rawNames.keys() and rawContent:
+                rawNames[key] = name
+            else:
+                # We've circled back to beginning, break the cycle
+                break
             rawValue = rawContent[self.charCounter:]
             ret = self.readObject(rawValue)
             if ret[0] == -1:

@@ -24,6 +24,7 @@
 '''
     Module to manage cryptographic operations with PDF files
 '''
+from assemblyline.common.str_utils import safe_str
 
 import hashlib
 import itertools
@@ -260,7 +261,7 @@ def isOwnerPass(password, dictO, dictU, computedUserPass, keyLength, revision):
         else:
             return False
     else:
-        keyLength = keyLength/8
+        keyLength = int(keyLength/8)
         lenPass = len(password)
         if lenPass > 32:
             password = password[:32]
@@ -279,6 +280,8 @@ def isOwnerPass(password, dictO, dictU, computedUserPass, keyLength, revision):
             counter = 19
             while counter >= 0:
                 newKey = ''
+                if isinstance(rc4Key, bytes):
+                    rc4Key = safe_str(rc4Key)
                 for i in range(len(rc4Key)):
                     newKey += chr(ord(rc4Key[i]) ^ counter)
                 dictO = RC4(dictO, newKey)
@@ -307,10 +310,7 @@ def RC4(data, key):
 
     # Initialization
     for x in range(256):
-        if six.PY3:
-            hash[x] = ord(chr(key[x % keyLength]))
-        else:
-            hash[x] = ord(key[x % keyLength])
+        hash[x] = ord(key[x % keyLength])
         box[x] = x
     for x in range(256):
         y = (y + int(box[x]) + int(hash[x])) % 256
@@ -326,10 +326,9 @@ def RC4(data, key):
         box[z] = box[y]
         box[y] = tmp
         k = box[((box[z] + box[y]) % 256)]
-        if six.PY3:
-            ret += chr(data[x] ^ k)
-        else:
-            ret += chr(ord(data[x]) ^ k)
+        if isinstance(data, bytes):
+            data = safe_str(data)
+        ret += chr(ord(data[x]) ^ k)
     return ret
 
 
