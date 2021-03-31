@@ -147,10 +147,7 @@ class PDFObject:
         value = str(self.value)
         rawValue = str(self.rawValue)
         encValue = str(self.encryptedValue)
-        if re.findall(
-                string, value, re.IGNORECASE) != [] or re.findall(
-                string, rawValue, re.IGNORECASE) != [] or re.findall(
-                string, encValue, re.IGNORECASE) != []:
+        if any(re.findall(string, body, re.IGNORECASE) for body in [value, rawValue, encValue]):
             return True
         if self.containsJS():
             for js in self.JSCode:
@@ -2127,13 +2124,8 @@ class PDFStream(PDFDictionary):
         rawStream = str(self.rawStream)
         encStream = str(self.encodedStream)
         decStream = str(self.decodedStream)
-        if re.findall(
-                string, value, re.IGNORECASE) != [] or re.findall(
-                string, rawValue, re.IGNORECASE) != [] or re.findall(
-                string, encValue, re.IGNORECASE) != [] or re.findall(
-                string, rawStream, re.IGNORECASE) != [] or re.findall(
-                string, encStream, re.IGNORECASE) != [] or re.findall(
-                string, decStream, re.IGNORECASE) != []:
+        if any(re.findall(string, body, re.IGNORECASE)
+               for body in [value, rawValue, encValue, rawStream, encStream, decStream]):
             return True
         if self.containsJS():
             for js in self.JSCode:
