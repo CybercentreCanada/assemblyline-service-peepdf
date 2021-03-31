@@ -101,8 +101,7 @@ class PeePDF(ServiceBase):
             request.result.add_section(res)
             return
 
-        with open(request.file_path, 'rb') as f:
-            file_contents = f.read()
+        file_contents = request.file_contents
 
         if b'<xdp:xdp' in file_contents:
             self.find_xdp_embedded(file_contents, request)
