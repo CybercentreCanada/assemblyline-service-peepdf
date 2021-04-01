@@ -33,7 +33,6 @@ import re
 import sys
 
 import six
-from jedi.inference.helpers import is_number
 
 import peepdf.ext.peepdf.aes as AES
 from peepdf.ext.peepdf.JSAnalysis import analyseJS, isJavascript
