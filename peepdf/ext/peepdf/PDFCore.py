@@ -25,25 +25,22 @@
     This module contains classes and methods to analyse and modify PDF files
 '''
 
+import codecs
 import hashlib
 import os
 import random
 import re
 import sys
+
 import six
-import codecs
+from jedi.inference.helpers import is_number
 
 import peepdf.ext.peepdf.aes as AES
-from peepdf.ext.peepdf.PDFUtils import (
-    encodeName, unescapeString, encodeString, escapeString, numToHex,
-    numToString
-)
-from peepdf.ext.peepdf.PDFCrypto import (
-    RC4, computeObjectKey, computeUserPass, isUserPass, isOwnerPass,
-    computeEncryptionKey, computeOwnerPass
-)
-from peepdf.ext.peepdf.JSAnalysis import isJavascript, analyseJS
+from peepdf.ext.peepdf.JSAnalysis import analyseJS, isJavascript
+from peepdf.ext.peepdf.PDFCrypto import (RC4, computeEncryptionKey, computeObjectKey, computeOwnerPass, computeUserPass,
+                                         isOwnerPass, isUserPass)
 from peepdf.ext.peepdf.PDFFilters import decodeStream, encodeStream
+from peepdf.ext.peepdf.PDFUtils import encodeName, encodeString, escapeString, numToHex, numToString, unescapeString
 
 MAL_ALL = 1
 MAL_HEAD = 2
@@ -2617,10 +2614,11 @@ class PDFStream(PDFDictionary):
 
     def resolveReferences(self):
         errorMessage = ''
-        if "/Length" in self.referencesInElements:
+        if hasattr(self, "referencesInElement") and "/Length" in self.referencesInElement:
             value = self.referencesInElements['/Length'][1]
-            self.size = int(value)
-            self.cleanStream()
+            if value.isnumeric():
+                self.size = int(value)
+                self.cleanStream()
         self.updateNeeded = False
         ret = self.decode()
         if ret[0] == -1:
