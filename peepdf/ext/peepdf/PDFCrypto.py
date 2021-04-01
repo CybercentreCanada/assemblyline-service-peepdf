@@ -40,7 +40,8 @@ warnings.filterwarnings("ignore")
 paddingString = b'\x28\xBF\x4E\x5E\x4E\x75\x8A\x41\x64\x00\x4E\x56\xFF\xFA\x01\x08\x2E\x2E\x00\xB6\xD0\x68\x3E\x80\x2F\x0C\xA9\xFE\x64\x53\x69\x7A'
 
 
-def computeEncryptionKey(password, dictOwnerPass, dictUserPass, dictOE, dictUE, fileID, pElement, dictKeyLength=128, revision=3, encryptMetadata=False, passwordType=None):
+def computeEncryptionKey(password, dictOwnerPass, dictUserPass, dictOE, dictUE, fileID, pElement, dictKeyLength=128,
+                         revision=3, encryptMetadata=False, passwordType=None):
     '''
         Compute an encryption key to encrypt/decrypt the PDF file
 
@@ -182,7 +183,8 @@ def computeUserPass(userPassString, dictO, fileID, pElement, keyLength=128, revi
     dictU = ''
     dictOE = ''
     dictUE = ''
-    ret = computeEncryptionKey(userPassString, dictO, dictU, dictOE, dictUE, fileID, pElement, keyLength, revision, encryptMetadata)
+    ret = computeEncryptionKey(userPassString, dictO, dictU, dictOE, dictUE, fileID,
+                               pElement, keyLength, revision, encryptMetadata)
     if ret[0] != -1:
         rc4Key = ret[1]
     else:
@@ -240,6 +242,7 @@ def isUserPass(password, computedUserPass, dictU, revision):
             return True
         else:
             return False
+
 
 def isOwnerPass(password, dictO, dictU, computedUserPass, keyLength, revision):
     '''
@@ -310,6 +313,7 @@ def RC4(data, key):
 
     # Initialization
     for x in range(256):
+        key = safe_str(key)
         hash[x] = ord(key[x % keyLength])
         box[x] = x
     for x in range(256):
@@ -335,6 +339,8 @@ def RC4(data, key):
 '''
     Author: Evan Fosmark (http://www.evanfosmark.com/2008/06/xor-encryption-with-python/)
 '''
+
+
 def xor(bytes, key):
     '''
         Simple XOR implementation
