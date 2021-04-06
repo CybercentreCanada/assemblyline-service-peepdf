@@ -43,7 +43,7 @@ def check_for_function(function: str, data: str) -> bool:
 # noinspection PyGlobalUndefined
 class PeePDF(ServiceBase):
     """ PeePDF service """
-    CVE_FALSE_POSITIVES = ["CVE-2009-0658", "CVE-2010-0188"]
+    CVE_FALSE_POSITIVES = ["CVE-2007-5020", "CVE-2009-0658", "CVE-2010-0188"]
 
     def __init__(self, config=None):
         super().__init__(config)
