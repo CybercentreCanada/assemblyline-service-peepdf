@@ -6,12 +6,14 @@ import json
 import os
 import re
 from base64 import b64decode
+from typing import Any, Collection, Dict, List, Optional
 
 from assemblyline.common.hexdump import hexdump
 from assemblyline_v4_service.common.base import ServiceBase
+from assemblyline_v4_service.common.request import ServiceRequest
 from assemblyline_v4_service.common.result import Result, ResultSection, BODY_FORMAT, Heuristic
 from peepdf.ext.peepdf.JSAnalysis import analyseJS, unescape
-from peepdf.ext.peepdf.PDFCore import PDFParser, vulnsDict
+from peepdf.ext.peepdf.PDFCore import PDFFile, PDFObject, PDFParser, vulnsDict
 
 BANNED_TYPES = ["xref", "objstm", "xobject", "metadata", "3d", "pattern", None]
 
@@ -38,19 +40,18 @@ def check_for_function(function: str, data: str) -> bool:
 
     returns: Whether the code contains the function
     """
-    return re.search(f'[^a-zA-Z]{function}[^a-zA-Z]', data)
-
+    return bool(re.search(f'[^a-zA-Z]{function}[^a-zA-Z]', data))
 
 # noinspection PyGlobalUndefined
 class PeePDF(ServiceBase):
     """ PeePDF service """
     CVE_FALSE_POSITIVES = ["CVE-2007-5020", "CVE-2009-0658", "CVE-2010-0188"]
 
-    def __init__(self, config=None):
+    def __init__(self, config: Optional[Dict] = None) -> None:
         super().__init__(config)
         self.max_pdf_size = self.config.get('max_pdf_size', 3000000)
 
-    def extract(self, data: bytes, filename: str, request, description: str = ''):
+    def extract(self, data: bytes, filename: str, request, description: str = '') -> None:
         """ Extract data as filename in the current working directory and add to request """
         if not description:
             description = f"Dumped from {os.path.basename(request.file_path)}"
@@ -59,7 +60,7 @@ class PeePDF(ServiceBase):
             f.write(data)
         request.add_extracted(file_path, filename, description)
 
-    def find_xdp_embedded(self, cbin, request):
+    def find_xdp_embedded(self, cbin: bytes, request: ServiceRequest) -> None:
         """ Find and report embedded XDP sections in PDF """
         if b'<pdf' in cbin and b'<document>' in cbin and b'<chunk>' in cbin:
             chunks = cbin.split(b'<chunk>')
@@ -91,7 +92,7 @@ class PeePDF(ServiceBase):
                 res_section.add_tag('file.behavior', "Embedded PDF (in XDP)")
                 request.result.add_section(res_section)
 
-    def execute(self, request):
+    def execute(self, request: ServiceRequest) -> None:
         """ Run service """
         request.result = Result()
 
@@ -134,7 +135,7 @@ class PeePDF(ServiceBase):
 
     # noinspection PyBroadException
     @staticmethod
-    def get_big_buffs(data, buff_min_size=256):
+    def get_big_buffs(data: str, buff_min_size: int = 256) -> List[str]:
         """ Finds large buffers in data """
         # Hunt for big variables
         var_re = r'[^\\]?"(.*?[^\\])"'
@@ -183,14 +184,14 @@ class PeePDF(ServiceBase):
         return out
 
     @staticmethod
-    def list_first_x(mylist, size=20):
+    def list_first_x(mylist: list, size: int = 20) -> list:
         """ Truncate list for display """
         if len(mylist) > size:
             mylist = mylist[:size]
             mylist.append("...")
         return mylist
 
-    def parse_version_stats(self, stats_version: dict) -> dict:
+    def parse_version_stats(self, stats_version: Dict[str, Any]) -> Dict[str, Any]:
         """ Parse a PDF versions statistics block into display JSON """
         v_json_body = {
             'catalog': stats_version['Catalog'] or "no",
@@ -223,7 +224,7 @@ class PeePDF(ServiceBase):
 
         return v_json_body
 
-    def parse_vulnerability(self, vuln, value, res: ResultSection):
+    def parse_vulnerability(self, vuln: str, value, res: ResultSection) -> None:
         """ Parse vulnerability info from vulnsDict and add it to a ResultSection
 
         vuln: vulnerability key
@@ -249,7 +250,8 @@ class PeePDF(ServiceBase):
         else:
             res.add_line(f"{vuln}: {str(value)}")
 
-    def analyze_javascript(self, js_code, unescaped_bytes, js_res, obj, request):
+    def analyze_javascript(self, js_code: str, unescaped_bytes: Collection[str],
+            js_res: ResultSection, obj: int, request: ServiceRequest) -> bool:
         """ Create section for javascript code blocks """
         buffers = False
 
@@ -298,27 +300,27 @@ class PeePDF(ServiceBase):
         # Handle unescaped buffers
         for i, buff in enumerate(set(unescaped_bytes)):
             try:
-                buff = buff.decode("hex")
+                unhexed = bytes.fromhex(buff)
             except Exception:
                 pass
 
             temp_path_name = f"obj{obj}_unescaped_{i}.buff"
-            shell_res = ResultSection(f"Unknown unescaped {len(buff)} bytes JavaScript "
+            shell_res = ResultSection(f"Unknown unescaped {len(unhexed)} bytes JavaScript "
                                       f"buffer (id: {i}) was resubmitted as "
                                       f"{temp_path_name}. Here are the first 256 bytes.",
                                       heuristic=Heuristic(6),
                                       parent=js_res)
-            shell_res.set_body(hexdump(buff[:256]), body_format=BODY_FORMAT.MEMORY_DUMP)
-            self.extract(buff, temp_path_name, request)
+            shell_res.set_body(hexdump(unhexed[:256]), body_format=BODY_FORMAT.MEMORY_DUMP)
+            self.extract(unhexed, temp_path_name, request)
             js_res.add_tag('file.behavior', "Unescaped JavaScript Buffer")
 
         return buffers
 
-    def analyze_stream(self, cur_obj, obj_name, version, request):
+    def analyze_stream(self, cur_obj: PDFObject, obj_name: int, version: int, request: ServiceRequest) -> None:
         """ Analyze PDF streams """
         if cur_obj.isEncodedStream and cur_obj.filter is not None:
             data = cur_obj.decodedStream
-            encoding = ''.join(c for c in cur_obj.filter.value if c not in '[]/').strip()
+            encoding: Optional[str] = ''.join(c for c in cur_obj.filter.value if c not in '[]/').strip()
         else:
             data = cur_obj.rawStream
             encoding = None
@@ -368,7 +370,7 @@ class PeePDF(ServiceBase):
 
     # noinspection PyBroadException,PyUnboundLocalVariable
 
-    def peepdf_analysis(self, pdf_file, request):
+    def peepdf_analysis(self, pdf_file: PDFFile, request: ServiceRequest) -> None:
         """ Analyze parsed pdf file """
         js_dump = []
 
