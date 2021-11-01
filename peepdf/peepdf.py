@@ -450,7 +450,7 @@ class PeePDF(ServiceBase):
                             if buffers and not javascript_res.heuristic:
                                 javascript_res.set_heuristic(2)
                             # Extract javascript block
-                            js_res.add_tag('file.behaviour', "Suspicious Javascript in PDF")
+                            js_res.add_tag('file.behavior', "Suspicious Javascript in PDF")
                             temp_js_outname = f"object{obj}-{version}_{js_index}.js"
                             self.extract(''.join(js_code).encode("utf-8"), temp_js_outname, request)
                             js_res.add_line(f"The JavaScript block was saved as {temp_js_outname}")
