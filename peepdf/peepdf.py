@@ -45,7 +45,6 @@ def check_for_function(function: str, data: str) -> bool:
 # noinspection PyGlobalUndefined
 class PeePDF(ServiceBase):
     """ PeePDF service """
-    CVE_FALSE_POSITIVES = ["CVE-2007-5020", "CVE-2009-0658", "CVE-2010-0188"]
 
     def __init__(self, config: Optional[Dict] = None) -> None:
         super().__init__(config)
@@ -229,8 +228,9 @@ class PeePDF(ServiceBase):
 
         vuln: vulnerability key
         value: the vulnerability value
-        res: the ResultSection
+        res: the ResultSection (must have heuristic set)
         """
+        assert res.heuristic
         if vuln in vulnsDict:
             temp = [vuln, ' (']
             for vuln_cve in vulnsDict[vuln]:
@@ -238,8 +238,8 @@ class PeePDF(ServiceBase):
                     temp.append(',')
                 vuln_cve = "".join(vuln_cve) if isinstance(vuln_cve, list) else vuln_cve
                 temp.append(vuln_cve)
-                cve_found = re.search("CVE-[0-9]{4}-[0-9]{4}", vuln_cve)
-                if cve_found and cve_found.group() not in self.CVE_FALSE_POSITIVES:
+                cve_found = re.search("CVE-([0-9]{4})-[0-9]{4}", vuln_cve)
+                if cve_found and int(cve_found.group(1)) > 2014:
                     vuln_name = cve_found.group()
                     res.add_tag('attribution.exploit', vuln_name)
                     res.add_tag('file.behavior', vuln_name)
