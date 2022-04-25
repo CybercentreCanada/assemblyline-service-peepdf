@@ -57,7 +57,7 @@ class PeePDF(ServiceBase):
         file_path = os.path.join(self.working_directory, filename)
         with open(file_path, 'wb') as f:
             f.write(data)
-        request.add_extracted(file_path, filename, description)
+        request.add_extracted(file_path, filename, description, safelist_interface=self.api_interface)
 
     def find_xdp_embedded(self, cbin: bytes, request: ServiceRequest) -> None:
         """ Find and report embedded XDP sections in PDF """
