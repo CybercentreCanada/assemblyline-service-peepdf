@@ -11,7 +11,7 @@ from typing import Any, Collection, Dict, List, Optional
 from assemblyline.common.hexdump import hexdump
 from assemblyline_v4_service.common.base import ServiceBase
 from assemblyline_v4_service.common.request import ServiceRequest
-from assemblyline_v4_service.common.result import Result, ResultSection, BODY_FORMAT, Heuristic
+from assemblyline_v4_service.common.result import BODY_FORMAT, Heuristic, Result, ResultSection
 from peepdf.ext.peepdf.JSAnalysis import analyseJS, unescape
 from peepdf.ext.peepdf.PDFCore import PDFFile, PDFObject, PDFParser, vulnsDict
 
