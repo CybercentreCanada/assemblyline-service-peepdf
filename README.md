@@ -8,7 +8,7 @@ This Assemblyline service uses the Python PeePDF library against PDF files.
 
 The PeePDF service will report the following information for each file when present:
 
-####PDF File Information
+#### PDF File Information
 
 - MD5
 - SHA1
@@ -31,7 +31,7 @@ The PeePDF service will report the following information for each file when pres
     - Encoded
     - Objects with JS code
 
-####Heuristics
+#### Heuristics
 
 **PeePDF.1**: Embedded PDF in XDP.
 
@@ -47,7 +47,7 @@ The PeePDF service will report the following information for each file when pres
 
 **PeePDF.7**: Suspicious Javascript.
 
-####Other Items of Interest
+#### Other Items of Interest
 
 - CVE identifiers
 - Embedded files (will attempt to extract)
