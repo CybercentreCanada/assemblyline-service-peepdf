@@ -13,10 +13,9 @@ file_required: true
 
 enabled: true
 timeout: 60
-
 disable_cache: false
-
 licence_count: 0
+privileged: true
 
 heuristics:
   - heur_id: 1
@@ -81,4 +80,4 @@ heuristics:
 docker_config:
   image: ${REGISTRY}cccs/assemblyline-service-peepdf:$SERVICE_TAG
   cpu_cores: 1
-  ram_mb: 512
+  ram_mb: 2048
