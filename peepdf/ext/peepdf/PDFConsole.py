@@ -155,7 +155,7 @@ class PDFConsole(cmd.Cmd):
 
     def postloop(self):
         if self.use_rawinput:
-            print((newLine + 'Leaving the Peepdf interactive console...Bye! ;)' + newLine))
+            print((newLine + 'Leaving the PeePDF interactive console...Bye! ;)' + newLine))
         self.leaving = True
 
     def do_bytes(self, argv):
