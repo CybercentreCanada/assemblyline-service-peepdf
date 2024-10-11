@@ -1,12 +1,10 @@
-name: build
+name: tests
 
 variables:
   - group: unittest-samples
 
-trigger:
-  tags:
-    include: ["v*"]
-pr: none
+trigger: ["*"]
+pr: ["*"]
 
 pool:
   vmImage: "ubuntu-20.04"
@@ -27,10 +25,8 @@ resources:
       trigger: none
 
 extends:
-  template: stages/deploy-service.yaml@PipelineTemplates
+  template: stages/test-service.yaml@PipelineTemplates
   parameters:
-    is_public: "true"
     samples_repo: unittest-samples
-    labels:
-      classification: "UNCLASSIFIED"
+    test_container: "true"
     

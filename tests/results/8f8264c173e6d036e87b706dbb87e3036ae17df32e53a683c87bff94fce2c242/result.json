@@ -1,0 +1,125 @@
+{
+  "extra": {
+    "drop_file": false,
+    "score": 0,
+    "sections": [
+      {
+        "auto_collapse": false,
+        "body": {
+          "binary": "True",
+          "comments": "0",
+          "encrypted": "False",
+          "errors": "N, o, n, e",
+          "linearized": "False",
+          "objects": "7",
+          "streams": "5",
+          "updates": "0",
+          "version": "1.5"
+        },
+        "body_config": {},
+        "body_format": "KEY_VALUE",
+        "classification": "TLP:C",
+        "depth": 0,
+        "heuristic": null,
+        "promote_to": null,
+        "tags": {},
+        "title_text": "PDF File Information",
+        "zeroize_on_tag_safe": false
+      },
+      {
+        "auto_collapse": false,
+        "body": {
+          "catalog": "2",
+          "decoding_errors": [
+            37,
+            39,
+            46,
+            49,
+            1
+          ],
+          "encoded": [
+            37,
+            39,
+            46,
+            49,
+            1
+          ],
+          "errors": [
+            37,
+            39,
+            46,
+            1,
+            49
+          ],
+          "info": "3",
+          "object_streams": [
+            1
+          ],
+          "objects": [
+            1,
+            2,
+            37,
+            39,
+            46,
+            48,
+            49
+          ],
+          "streams": [
+            37,
+            39,
+            46,
+            49,
+            1
+          ],
+          "xref_streams": [
+            49
+          ]
+        },
+        "body_config": {},
+        "body_format": "KEY_VALUE",
+        "classification": "TLP:C",
+        "depth": 1,
+        "heuristic": null,
+        "promote_to": null,
+        "tags": {},
+        "title_text": "Version 0",
+        "zeroize_on_tag_safe": false
+      },
+      {
+        "auto_collapse": false,
+        "body": "/OpenAction: [2]\n/Names: [2]\n/AcroForm: [2]",
+        "body_config": {},
+        "body_format": "TEXT",
+        "classification": "TLP:C",
+        "depth": 2,
+        "heuristic": {
+          "attack_ids": [],
+          "frequency": 1,
+          "heur_id": 8,
+          "score": 0,
+          "score_map": {},
+          "signatures": {}
+        },
+        "promote_to": null,
+        "tags": {},
+        "title_text": "Suspicious elements",
+        "zeroize_on_tag_safe": false
+      }
+    ]
+  },
+  "files": {
+    "extracted": [],
+    "supplementary": []
+  },
+  "results": {
+    "heuristics": [
+      {
+        "attack_ids": [],
+        "heur_id": 8,
+        "signatures": []
+      }
+    ],
+    "tags": {},
+    "temp_submission_data": {}
+  }
+}
