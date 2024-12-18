@@ -1,0 +1,91 @@
+{
+  "extra": {
+    "drop_file": false,
+    "score": 0,
+    "sections": [
+      {
+        "auto_collapse": false,
+        "body": {
+          "binary": "False",
+          "comments": "0",
+          "encrypted": "False",
+          "errors": "EOL not found",
+          "linearized": "False",
+          "objects": "13",
+          "streams": "3",
+          "updates": "0",
+          "version": "1.7"
+        },
+        "body_config": {},
+        "body_format": "KEY_VALUE",
+        "classification": "TLP:C",
+        "depth": 0,
+        "heuristic": null,
+        "promote_to": null,
+        "tags": {},
+        "title_text": "PDF File Information",
+        "zeroize_on_tag_safe": false
+      },
+      {
+        "auto_collapse": false,
+        "body": {
+          "catalog": "1",
+          "decoding_errors": [
+            7,
+            10,
+            11
+          ],
+          "encoded": [
+            7,
+            10,
+            11
+          ],
+          "errors": [
+            7,
+            10,
+            11
+          ],
+          "info": "5",
+          "objects": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13
+          ],
+          "streams": [
+            7,
+            10,
+            11
+          ]
+        },
+        "body_config": {},
+        "body_format": "KEY_VALUE",
+        "classification": "TLP:C",
+        "depth": 1,
+        "heuristic": null,
+        "promote_to": null,
+        "tags": {},
+        "title_text": "Version 0",
+        "zeroize_on_tag_safe": false
+      }
+    ]
+  },
+  "files": {
+    "extracted": [],
+    "supplementary": []
+  },
+  "results": {
+    "heuristics": [],
+    "tags": {},
+    "temp_submission_data": {}
+  }
+}
