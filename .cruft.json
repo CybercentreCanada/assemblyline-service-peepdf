@@ -1,6 +1,6 @@
 {
   "template": "https://github.com/CybercentreCanada/assemblyline-service-template.git",
-  "commit": "dfed59079369f80850e7a23db722cc84fc7a2832",
+  "commit": "6d2fcb683f00eeda843cf2c40981e266679a97dc",
   "checkout": null,
   "context": {
     "cookiecutter": {
@@ -8,7 +8,7 @@
       "__svc_name": "peepdf",
       "__repository": "assemblyline-service-peepdf",
       "__pkg_name": "peepdf",
-      "__class_name": "PeePDF",
+      "__class_name": "Peepdf",
       "short_description": "This Assemblyline service uses the Python PeePDF library against PDF files.",
       "short_description_fr": "Ce service Assemblyline utilise la bibliothèque Python PeePDF pour les fichiers PDF.",
       "stage": "CORE",
