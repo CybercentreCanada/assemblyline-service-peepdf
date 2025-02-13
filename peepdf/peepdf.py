@@ -40,7 +40,7 @@ def check_for_function(function: str, data: str) -> bool:
 
     returns: Whether the code contains the function
     """
-    return bool(re.search(f'[^a-zA-Z]{function}[^a-zA-Z]', data))
+    return bool(re.search(rf'\b{function}\s*\(', data))
 
 # noinspection PyGlobalUndefined
 class PeePDF(ServiceBase):
