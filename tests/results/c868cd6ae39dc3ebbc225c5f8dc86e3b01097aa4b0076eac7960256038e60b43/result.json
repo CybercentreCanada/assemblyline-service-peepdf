@@ -212,13 +212,13 @@
     ]
   },
   "files": {
-    "extracted": [
+    "extracted": [],
+    "supplementary": [
       {
         "name": "javascript_dump.js",
         "sha256": "934c72603603ff7ca61a88faa36a94f3dfbdb8472df8e9778ab79a99b7ab68cd"
       }
-    ],
-    "supplementary": []
+    ]
   },
   "results": {
     "heuristics": [
